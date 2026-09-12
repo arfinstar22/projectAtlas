@@ -3,8 +3,83 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: dark;
+  }
+  
+  html {
+    @apply bg-surface-950 text-surface-100;
+  }
+  
   body {
-    @apply bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100;
+    @apply bg-surface-950 text-surface-100 antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-surface-900;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-border-light;
+  }
+
+  /* Selection */
+  ::selection {
+    @apply bg-primary-500/30 text-surface-100;
+  }
+
+  /* Focus visible */
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary-500 ring-offset-2 ring-offset-surface-950;
+  }
+}
+
+@layer components {
+  /* Neon glow utility */
+  .glow-neon {
+    @apply relative;
+  }
+  
+  .glow-neon::before {
+    @apply content-[''] absolute inset-0 bg-primary-neon/20 blur-[30px] -z-10 opacity-50;
+  }
+  
+  .glow-neon-sm::before {
+    @apply opacity-30 blur-[20px];
+  }
+}
+
+@layer utilities {
+  /* Text gradient */
+  .text-gradient-neon {
+    @apply bg-gradient-to-r from-primary-neon to-primary-400 bg-clip-text text-transparent;
+  }
+  
+  .text-gradient-primary {
+    @apply bg-gradient-to-r from-primary-400 to-primary-600 bg-clip-text text-transparent;
+  }
+  
+  /* Border glow */
+  .border-glow {
+    @apply relative;
+  }
+  
+  .border-glow::after {
+    @apply content-[''] absolute inset-0 rounded-xl bg-gradient-to-r from-primary-neon/50 to-primary-500/50 opacity-0 transition-opacity duration-300 pointer-events-none;
+  }
+  
+  .border-glow:hover::after {
+    @apply opacity-100;
   }
 }

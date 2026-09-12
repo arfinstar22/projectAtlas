@@ -2,43 +2,69 @@
  * ATLAS Design System
  * 
  * A consistent design system for the ATLAS Document Intelligence application.
- * Ensures visual coherence, accessibility, and maintainability across all components.
+ * Dark Green / Neon Green theme for local-first document intelligence.
  */
 
 // ============================================
-// COLORS
+// COLORS - ATLAS Dark Green Theme
 // ============================================
 
 export const colors = {
-  // Primary brand colors
+  // Primary brand colors - Neon Green
   primary: {
-    50: '#eff6ff',
-    100: '#dbeafe',
-    200: '#bfdbfe',
-    300: '#93c5fd',
-    400: '#60a5fa',
-    500: '#3b82f6',
-    600: '#2563eb',
-    700: '#1d4ed8',
-    800: '#1e40af',
-    900: '#1e3a5f',
-    950: '#172554',
+    50: '#f0fdf4',
+    100: '#dcfce7',
+    200: '#bbf7d0',
+    300: '#86efac',
+    400: '#4ade80',
+    500: '#22c55e',
+    600: '#16a34a',
+    650: '#14b84a',
+    700: '#15803d',
+    800: '#166534',
+    900: '#14532d',
+    950: '#052e16',
+    neon: '#00ff88',
+    'neon-dim': '#00cc6a',
   },
 
-  // Neutral grays
-  neutral: {
-    0: '#ffffff',
-    50: '#fafafa',
-    100: '#f5f5f5',
-    200: '#e5e5e5',
-    300: '#d4d4d4',
-    400: '#a3a3a3',
-    500: '#737373',
-    600: '#525252',
-    700: '#404040',
-    800: '#262626',
-    900: '#171717',
-    950: '#0a0a0a',
+  // Dark backgrounds
+  dark: {
+    50: '#f0fdf4',
+    100: '#dcfce7',
+    200: '#bbf7d0',
+    300: '#86efac',
+    400: '#4ade80',
+    500: '#22c55e',
+    600: '#16a34a',
+    700: '#15803d',
+    800: '#166534',
+    900: '#14532d',
+    950: '#052e16',
+  },
+
+  // Surface colors - Dark theme
+  surface: {
+    950: '#050a07',
+    900: '#0a120d',
+    850: '#0d1812',
+    800: '#0f1a13',
+    750: '#111d14',
+    700: '#132219',
+    650: '#162a1c',
+    600: '#1a2e20',
+    550: '#1d3523',
+    500: '#1f3a26',
+    400: '#2a4a3a',
+    300: '#3a5a4a',
+  },
+
+  // Border colors
+  border: {
+    dark: '#1e3a2a',
+    DEFAULT: '#2a4a3a',
+    light: '#3a5a4a',
+    neon: '#00ff88',
   },
 
   // Semantic colors
@@ -46,9 +72,9 @@ export const colors = {
     light: '#22c55e',
     DEFAULT: '#16a34a',
     dark: '#15803d',
-    bg: '#f0fdf4',
+    bg: '#052e16',
     bgDark: '#052e16',
-    border: '#bbf7d0',
+    border: '#14532d',
     borderDark: '#14532d',
   },
 
@@ -56,9 +82,9 @@ export const colors = {
     light: '#facc15',
     DEFAULT: '#eab308',
     dark: '#ca8a04',
-    bg: '#fefce8',
-    bgDark: '#3f3100',
-    border: '#fef08a',
+    bg: '#3f3100',
+    bgDark: '#1a1602',
+    border: '#713f12',
     borderDark: '#713f12',
   },
 
@@ -66,9 +92,9 @@ export const colors = {
     light: '#f87171',
     DEFAULT: '#ef4444',
     dark: '#dc2626',
-    bg: '#fef2f2',
+    bg: '#450a0a',
     bgDark: '#450a0a',
-    border: '#fecaca',
+    border: '#7f1d1d',
     borderDark: '#7f1d1d',
   },
 
@@ -76,10 +102,18 @@ export const colors = {
     light: '#38bdf8',
     DEFAULT: '#0ea5e9',
     dark: '#0284c7',
-    bg: '#eff6ff',
+    bg: '#082f49',
     bgDark: '#082f49',
-    border: '#bae6fd',
+    border: '#0c4a6e',
     borderDark: '#0c4a6e',
+  },
+
+  // Text colors
+  text: {
+    primary: '#f5f7f6',
+    secondary: '#d8e0db',
+    muted: '#8c9991',
+    inverse: '#0a120d',
   },
 } as const;
 
@@ -125,16 +159,18 @@ export const borderRadius = {
 export const shadows = {
   none: 'none',
   sm: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
-  DEFAULT: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
-  md: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
-  lg: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
-  xl: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)',
-  '2xl': '0 25px 50px -12px rgb(0 0 0 / 0.25)',
-  inner: 'inset 0 2px 4px 0 rgb(0 0 0 / 0.05)',
+  DEFAULT: '0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.3)',
+  md: '0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3)',
+  lg: '0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3)',
+  xl: '0 20px 25px -5px rgb(0 0 0 / 0.3), 0 8px 10px -6px rgb(0 0 0 / 0.3)',
+  '2xl': '0 25px 50px -12px rgb(0 0 0 / 0.4)',
+  inner: 'inset 0 2px 4px 0 rgb(0 0 0 / 0.1)',
   
   // Colored shadows for primary actions
-  primary: '0 4px 14px 0 rgb(59 130 246 / 0.3)',
-  primaryHover: '0 6px 20px 0 rgb(59 130 246 / 0.4)',
+  primary: '0 4px 14px 0 rgb(34 197 94 / 0.3)',
+  primaryHover: '0 6px 20px 0 rgb(34 197 94 / 0.4)',
+  neon: '0 0 20px rgb(0 255 136 / 0.4)',
+  neonSm: '0 0 10px rgb(0 255 136 / 0.3)',
 } as const;
 
 // ============================================
@@ -237,38 +273,38 @@ export const buttonVariants = {
     px-4 py-2.5 text-sm font-medium text-white
     bg-primary-600 border border-transparent
     rounded-lg shadow-sm
-    hover:bg-primary-700 hover:shadow-primary
-    focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
+    hover:bg-primary-650 hover:shadow-primary
+    focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-surface-900
     disabled:opacity-50 disabled:cursor-not-allowed
     transition-colors duration-200
   `,
   secondary: `
     inline-flex items-center justify-center gap-2
-    px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300
-    bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600
+    px-4 py-2.5 text-sm font-medium text-surface-300
+    bg-surface-700 border border-border
     rounded-lg shadow-sm
-    hover:bg-gray-50 dark:hover:bg-gray-700
-    focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
+    hover:bg-surface-600 hover:border-border-light
+    focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-surface-900
     disabled:opacity-50 disabled:cursor-not-allowed
     transition-colors duration-200
   `,
   outline: `
     inline-flex items-center justify-center gap-2
-    px-4 py-2.5 text-sm font-medium text-primary-600 dark:text-primary-400
-    bg-transparent border border-primary-600 dark:border-primary-400
+    px-4 py-2.5 text-sm font-medium text-primary-400
+    bg-transparent border border-primary-500
     rounded-lg
-    hover:bg-primary-50 dark:hover:bg-primary-900/20
-    focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
+    hover:bg-primary-500/10
+    focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-surface-900
     disabled:opacity-50 disabled:cursor-not-allowed
     transition-colors duration-200
   `,
   ghost: `
     inline-flex items-center justify-center gap-2
-    px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400
+    px-4 py-2.5 text-sm font-medium text-surface-300
     bg-transparent border border-transparent
     rounded-lg
-    hover:bg-gray-100 dark:hover:bg-gray-800
-    focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
+    hover:bg-surface-700
+    focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-surface-900
     disabled:opacity-50 disabled:cursor-not-allowed
     transition-colors duration-200
   `,
@@ -278,9 +314,19 @@ export const buttonVariants = {
     bg-error-DEFAULT border border-transparent
     rounded-lg shadow-sm
     hover:bg-error-dark hover:shadow-[0_4px_14px_0_rgb(239_68_68_/_0.3)]
-    focus:outline-none focus:ring-2 focus:ring-error-DEFAULT focus:ring-offset-2
+    focus:outline-none focus:ring-2 focus:ring-error-DEFAULT focus:ring-offset-2 focus:ring-offset-surface-900
     disabled:opacity-50 disabled:cursor-not-allowed
     transition-colors duration-200
+  `,
+  neon: `
+    inline-flex items-center justify-center gap-2
+    px-4 py-2.5 text-sm font-bold text-surface-950
+    bg-primary-neon border border-transparent
+    rounded-lg shadow-neon
+    hover:bg-primary-neon-dim hover:shadow-neon
+    focus:outline-none focus:ring-2 focus:ring-primary-neon focus:ring-offset-2 focus:ring-offset-surface-900
+    disabled:opacity-50 disabled:cursor-not-allowed
+    transition-all duration-200
   `,
 } as const;
 
@@ -293,68 +339,86 @@ export const buttonSizes = {
 
 export const inputVariants = {
   default: `
-    w-full px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100
-    bg-white dark:bg-gray-700
-    border border-gray-300 dark:border-gray-600
+    w-full px-3 py-2.5 text-sm text-surface-100
+    bg-surface-800
+    border border-border
     rounded-lg
-    placeholder:text-gray-400 dark:placeholder:text-gray-500
-    focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
+    placeholder:text-text-muted
+    focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500
     disabled:opacity-50 disabled:cursor-not-allowed
     transition-colors duration-200
   `,
   error: `
-    w-full px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100
-    bg-white dark:bg-gray-700
+    w-full px-3 py-2.5 text-sm text-surface-100
+    bg-surface-800
     border border-error-DEFAULT
     rounded-lg
-    placeholder:text-gray-400 dark:placeholder:text-gray-500
-    focus:outline-none focus:ring-2 focus:ring-error-DEFAULT focus:border-transparent
+    placeholder:text-text-muted
+    focus:outline-none focus:ring-2 focus:ring-error-DEFAULT focus:border-error-DEFAULT
     transition-colors duration-200
+  `,
+  search: `
+    w-full pl-10 pr-4 py-3 text-base text-surface-100
+    bg-surface-800
+    border border-border
+    rounded-lg
+    placeholder:text-text-muted
+    focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500
+    transition-all duration-200
   `,
 } as const;
 
 export const cardVariants = {
   default: `
-    bg-white dark:bg-gray-800
-    border border-gray-200 dark:border-gray-700
+    bg-surface-800
+    border border-border
     rounded-xl shadow-sm
   `,
   elevated: `
-    bg-white dark:bg-gray-800
-    border border-gray-200 dark:border-gray-700
+    bg-surface-800
+    border border-border
     rounded-xl shadow-lg
   `,
   outlined: `
-    bg-white dark:bg-gray-800
-    border-2 border-gray-200 dark:border-gray-700
+    bg-surface-800
+    border-2 border-border
     rounded-xl
+  `,
+  neon: `
+    bg-surface-800
+    border border-primary-neon/30
+    rounded-xl shadow-neon-sm
   `,
 } as const;
 
 export const badgeVariants = {
   default: `
     inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full
-    bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300
+    bg-surface-700 text-surface-300
   `,
   primary: `
     inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full
-    bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300
+    bg-primary-500/20 text-primary-400 border border-primary-500/30
   `,
   success: `
     inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full
-    bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400
+    bg-green-500/20 text-green-400 border border-green-500/30
   `,
   warning: `
     inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full
-    bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400
+    bg-yellow-500/20 text-yellow-400 border border-yellow-500/30
   `,
   error: `
     inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full
-    bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400
+    bg-red-500/20 text-red-400 border border-red-500/30
   `,
   info: `
     inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full
-    bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400
+    bg-blue-500/20 text-blue-400 border border-blue-500/30
+  `,
+  neon: `
+    inline-flex items-center px-2 py-0.5 text-xs font-bold rounded-full
+    bg-primary-neon text-surface-950
   `,
 } as const;
 
@@ -429,7 +493,7 @@ export function focusRing(color: 'primary' | 'error' | 'success' = 'primary') {
     error: 'focus:ring-error-DEFAULT',
     success: 'focus:ring-green-500',
   };
-  return `focus:outline-none focus:ring-2 ${colorMap[color]} focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900`;
+  return `focus:outline-none focus:ring-2 ${colorMap[color]} focus:ring-offset-2 focus:ring-offset-surface-950`;
 }
 
 // Generate consistent transition

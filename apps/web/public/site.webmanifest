@@ -1,0 +1,17 @@
+{
+  "name": "ATLAS - Document Intelligence",
+  "short_name": "ATLAS",
+  "description": "Hybrid Local Document Intelligence - Cari jawaban, bukan file",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050a07",
+  "theme_color": "#052e16",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

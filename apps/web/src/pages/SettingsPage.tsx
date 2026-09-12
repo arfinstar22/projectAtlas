@@ -9,10 +9,13 @@ import {
   TestTube,
   AlertCircle,
   CheckCircle2,
-  Loader2
+  Loader2,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { api } from '../services/api';
 import toast from 'react-hot-toast';
+import { cn, cardVariants, badgeVariants, buttonVariants, inputVariants } from '../design-system';
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general');
@@ -31,12 +34,13 @@ export function SettingsPage() {
     },
     general: {
       language: 'id',
-      darkMode: false,
+      darkMode: true,
       autoIndex: true
     }
   });
   const [aiStatus, setAiStatus] = useState<{ provider: string; configured: boolean; available: boolean } | null>(null);
   const [testingConnection, setTestingConnection] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
 
   const tabs = [
     { id: 'general', name: 'Umum', icon: SettingsIcon },
@@ -53,7 +57,6 @@ export function SettingsPage() {
     try {
       const status = await api.getAIStatus();
       setAiStatus(status);
-      // Update local settings with actual values from server
       setSettings(prev => ({
         ...prev,
         ai: {
@@ -70,7 +73,6 @@ export function SettingsPage() {
   };
 
   const handleSave = async () => {
-    // For now, just show success - actual persistence would need server endpoint
     toast.success('Pengaturan disimpan (simulasi - persistensi server belum diimplementasikan)');
   };
 
@@ -92,20 +94,21 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+      <div className={cn(cardVariants.default, 'overflow-hidden')}>
         {/* Tabs */}
-        <div className="border-b border-gray-200 dark:border-gray-700">
+        <div className="border-b border-border">
           <nav className="flex space-x-8 px-6 py-4">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 py-2 px-3 text-sm font-medium rounded-lg transition-colors ${
+                className={cn(
+                  'flex items-center gap-2 py-2 px-3 text-sm font-medium rounded-lg transition-colors',
                   activeTab === tab.id
-                    ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300'
-                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                }`}
+                    ? 'bg-primary-500/15 text-primary-400 border-b-2 border-primary-500'
+                    : 'text-text-muted hover:text-surface-100 hover:bg-surface-800/50'
+                )}
               >
                 <tab.icon className="w-4 h-4" />
                 {tab.name}
@@ -118,13 +121,13 @@ export function SettingsPage() {
         <div className="p-6">
           {activeTab === 'general' && (
             <div className="space-y-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              <h3 className="text-lg font-semibold text-surface-100">
                 Pengaturan Umum
               </h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-muted mb-2">
                     Bahasa Interface
                   </label>
                   <select
@@ -133,7 +136,7 @@ export function SettingsPage() {
                       ...prev,
                       general: { ...prev.general, language: e.target.value }
                     }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    className="w-full px-3 py-2 border border-border rounded-lg bg-surface-800 text-surface-100 focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500"
                   >
                     <option value="id">Bahasa Indonesia</option>
                     <option value="en">English</option>
@@ -149,10 +152,10 @@ export function SettingsPage() {
                         ...prev,
                         general: { ...prev.general, darkMode: e.target.checked }
                       }))}
-                      className="rounded border-gray-300 dark:border-gray-600"
+                      className="rounded border-border bg-surface-800 text-primary-500 focus:ring-primary-500"
                     />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Mode Gelap
+                    <span className="text-sm font-medium text-surface-300">
+                      Mode Gelap (selalu aktif di ATLAS)
                     </span>
                   </label>
                 </div>
@@ -166,9 +169,9 @@ export function SettingsPage() {
                         ...prev,
                         general: { ...prev.general, autoIndex: e.target.checked }
                       }))}
-                      className="rounded border-gray-300 dark:border-gray-600"
+                      className="rounded border-border bg-surface-800 text-primary-500 focus:ring-primary-500"
                     />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <span className="text-sm font-medium text-surface-300">
                       Auto-index file baru
                     </span>
                   </label>
@@ -179,25 +182,30 @@ export function SettingsPage() {
 
           {activeTab === 'ai' && (
             <div className="space-y-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              <h3 className="text-lg font-semibold text-surface-100">
                 Konfigurasi AI Provider
               </h3>
 
               {/* AI Status Card */}
-              <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 ${
-                aiStatus?.configured ? 'border-green-200 dark:border-green-800' : 'border-yellow-200 dark:border-yellow-800'
-              }`}>
+              <div className={cn(
+                cardVariants.default, 'p-4',
+                aiStatus?.configured ? 'border-green-500/30' : 'border-yellow-500/30'
+              )}>
                 <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-lg ${
-                    aiStatus?.configured ? 'bg-green-100 dark:bg-green-900/30' : 'bg-yellow-100 dark:bg-yellow-900/30'
-                  }`}>
-                    <CheckCircle2 className={`w-5 h-5 ${aiStatus?.configured ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`} />
+                  <div className={cn(
+                    'p-2 rounded-lg',
+                    aiStatus?.configured ? 'bg-green-500/15' : 'bg-yellow-500/15'
+                  )}>
+                    <CheckCircle2 className={cn(
+                      'w-5 h-5',
+                      aiStatus?.configured ? 'text-green-400' : 'text-yellow-400'
+                    )} />
                   </div>
                   <div className="flex-1">
-                    <p className="font-medium text-gray-900 dark:text-gray-100">
+                    <p className="font-medium text-surface-100">
                       {aiStatus?.configured ? 'AI Provider Terkonfigurasi' : 'AI Provider Belum Dikonfigurasi'}
                     </p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    <p className="text-sm text-text-muted mt-1">
                       {aiStatus?.configured 
                         ? `Provider: ${aiStatus.provider} • Model: ${settings.ai.model} • Siap digunakan`
                         : 'Masukkan API key OpenRouter untuk mengaktifkan fitur Tanya ATLAS'}
@@ -205,11 +213,11 @@ export function SettingsPage() {
                   </div>
                 </div>
               </div>
-
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              
+              <div className="bg-primary-500/10 border border-primary-500/20 rounded-lg p-4">
                 <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-                  <div className="text-sm text-blue-800 dark:text-blue-200">
+                  <AlertCircle className="w-5 h-5 text-primary-400 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-primary-300">
                     <p className="font-medium mb-1">Privasi & Keamanan</p>
                     <p>
                       Hanya konteks relevan yang dikirim ke AI provider, bukan seluruh file. 
@@ -221,7 +229,7 @@ export function SettingsPage() {
               
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-muted mb-2">
                     Provider
                   </label>
                   <select
@@ -230,7 +238,7 @@ export function SettingsPage() {
                       ...prev,
                       ai: { ...prev.ai, provider: e.target.value }
                     }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    className="w-full px-3 py-2 border border-border rounded-lg bg-surface-800 text-surface-100 focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500"
                   >
                     <option value="openrouter">OpenRouter</option>
                     <option value="local" disabled>Local AI (Coming Soon)</option>
@@ -238,22 +246,31 @@ export function SettingsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-muted mb-2">
                     API Key
                   </label>
-                  <input
-                    type="password"
-                    value={settings.ai.apiKey}
-                    onChange={(e) => setSettings(prev => ({
-                      ...prev,
-                      ai: { ...prev.ai, apiKey: e.target.value }
-                    }))}
-                    placeholder="Masukkan API key dari provider"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                  />
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  <div className="relative">
+                    <input
+                      type={showApiKey ? 'text' : 'password'}
+                      value={settings.ai.apiKey}
+                      onChange={(e) => setSettings(prev => ({
+                        ...prev,
+                        ai: { ...prev.ai, apiKey: e.target.value }
+                      }))}
+                      placeholder="Masukkan API key dari provider"
+                      className="w-full pr-10 py-2 border border-border rounded-lg bg-surface-800 text-surface-100 focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-surface-300"
+                    >
+                      {showApiKey ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                  <p className="mt-1 text-sm text-text-muted">
                     Dapatkan API key dari{' '}
-                    <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" className="text-primary-600 dark:text-primary-400 hover:underline">
+                    <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:underline">
                       openrouter.ai
                     </a>
                   </p>
@@ -261,7 +278,7 @@ export function SettingsPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-text-muted mb-2">
                       Model Chat
                     </label>
                     <select
@@ -270,7 +287,7 @@ export function SettingsPage() {
                         ...prev,
                         ai: { ...prev.ai, model: e.target.value }
                       }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      className="w-full px-3 py-2 border border-border rounded-lg bg-surface-800 text-surface-100 focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500"
                     >
                       <option value="openai/gpt-3.5-turbo">GPT-3.5 Turbo</option>
                       <option value="openai/gpt-4">GPT-4</option>
@@ -279,7 +296,7 @@ export function SettingsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-text-muted mb-2">
                       Model Embedding
                     </label>
                     <select
@@ -288,7 +305,7 @@ export function SettingsPage() {
                         ...prev,
                         ai: { ...prev.ai, embeddingModel: e.target.value }
                       }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      className="w-full px-3 py-2 border border-border rounded-lg bg-surface-800 text-surface-100 focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500"
                     >
                       <option value="openai/text-embedding-ada-002">OpenAI Ada-002</option>
                       <option value="openai/text-embedding-3-small">OpenAI Embedding v3 Small</option>
@@ -299,7 +316,7 @@ export function SettingsPage() {
                 <button
                   onClick={testConnection}
                   disabled={testingConnection}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-4 py-2 border border-border text-text-muted rounded-lg hover:bg-surface-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {testingConnection ? (
                     <>
@@ -319,13 +336,13 @@ export function SettingsPage() {
 
           {activeTab === 'indexing' && (
             <div className="space-y-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              <h3 className="text-lg font-semibold text-surface-100">
                 Pengaturan Indexing
               </h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-muted mb-2">
                     Ukuran Chunk
                   </label>
                   <input
@@ -335,13 +352,13 @@ export function SettingsPage() {
                       ...prev,
                       indexing: { ...prev.indexing, chunkSize: parseInt(e.target.value) }
                     }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    className="w-full px-3 py-2 border border-border rounded-lg bg-surface-800 text-surface-100 focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500"
                   />
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Karakter per chunk</p>
+                  <p className="mt-1 text-sm text-text-muted">Karakter per chunk</p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-muted mb-2">
                     Overlap Chunk
                   </label>
                   <input
@@ -351,13 +368,13 @@ export function SettingsPage() {
                       ...prev,
                       indexing: { ...prev.indexing, chunkOverlap: parseInt(e.target.value) }
                     }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    className="w-full px-3 py-2 border border-border rounded-lg bg-surface-800 text-surface-100 focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500"
                   />
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Karakter overlap antar chunk</p>
+                  <p className="mt-1 text-sm text-text-muted">Karakter overlap antar chunk</p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-muted mb-2">
                     Ukuran File Maksimum (MB)
                   </label>
                   <input
@@ -367,7 +384,7 @@ export function SettingsPage() {
                       ...prev,
                       indexing: { ...prev.indexing, maxFileSize: parseInt(e.target.value) }
                     }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    className="w-full px-3 py-2 border border-border rounded-lg bg-surface-800 text-surface-100 focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500"
                   />
                 </div>
 
@@ -380,13 +397,13 @@ export function SettingsPage() {
                         ...prev,
                         indexing: { ...prev.indexing, enableOCR: e.target.checked }
                       }))}
-                      className="rounded border-gray-300 dark:border-gray-600"
+                      className="rounded border-border bg-surface-800 text-primary-500 focus:ring-primary-500"
                     />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <span className="text-sm font-medium text-surface-300">
                       Aktifkan OCR untuk gambar
                     </span>
                   </label>
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 ml-6">
+                  <p className="mt-1 text-sm text-text-muted ml-6">
                     Ekstrak teks dari gambar dan PDF yang di-scan
                   </p>
                 </div>
@@ -396,15 +413,15 @@ export function SettingsPage() {
 
           {activeTab === 'security' && (
             <div className="space-y-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              <h3 className="text-lg font-semibold text-surface-100">
                 Keamanan & Privasi
               </h3>
               
               <div className="space-y-4">
-                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
                   <div className="flex items-start gap-3">
-                    <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
-                    <div className="text-sm text-green-800 dark:text-green-200">
+                    <CheckCircle2 className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-green-300">
                       <p className="font-medium mb-2">Jaminan Privasi ATLAS</p>
                       <ul className="space-y-1 list-disc list-inside">
                         <li>File asli tetap di komputer Anda</li>
@@ -418,18 +435,18 @@ export function SettingsPage() {
                 </div>
 
                 <div>
-                  <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">
+                  <h4 className="font-medium text-surface-100 mb-2">
                     Folder Terhubung
                   </h4>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  <p className="text-sm text-text-muted mb-4">
                     ATLAS hanya dapat mengakses folder yang Anda izinkan
                   </p>
                   
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg">
+                    <div className="flex items-center justify-between p-3 border border-border rounded-lg">
                       <div className="flex items-center gap-3">
-                        <Folder className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                        <Folder className="w-5 h-5 text-primary-400" />
+                        <span className="text-sm text-text-muted">
                           Belum ada folder terhubung
                         </span>
                       </div>
@@ -441,10 +458,10 @@ export function SettingsPage() {
           )}
 
           {/* Save Button */}
-          <div className="flex justify-end pt-6 border-t border-gray-200 dark:border-gray-700">
+          <div className="flex justify-end pt-6 border-t border-border">
             <button
               onClick={handleSave}
-              className="flex items-center gap-2 px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+              className={cn(buttonVariants.neon)}
             >
               <Save className="w-4 h-4" />
               Simpan Pengaturan
