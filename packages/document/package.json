@@ -1,0 +1,25 @@
+{
+  "name": "@atlas/document",
+  "version": "0.1.0",
+  "description": "ATLAS Document Processing Engine",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pdf-parse": "^1.1.1",
+    "mammoth": "^1.6.0",
+    "csv-parse": "^5.5.0",
+    "marked": "^9.1.0",
+    "xlsx": "^0.18.5",
+    "mime-types": "^2.1.35"
+  },
+  "devDependencies": {
+    "@types/mime-types": "^2.1.0",
+    "@types/pdf-parse": "^1.1.0",
+    "typescript": "^5.0.0"
+  }
+}

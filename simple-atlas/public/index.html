@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ATLAS — Hybrid Local Document Intelligence</title>
+  <meta name="description" content="Lapisan kecerdasan untuk kumpulan dokumen lokal Anda. Jangan cari file. Cari jawabannya.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div id="app-container">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebar-backdrop" class="sidebar-backdrop" onclick="toggleSidebar(false)"></div>
+
+    <!-- SIDEBAR -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <div class="brand-badge">A</div>
+        <div class="brand-text">
+          <h1>ATLAS</h1>
+          <span>Document Intelligence</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section-title">Menu Utama</div>
+        <a class="nav-item active" data-view="dashboard" onclick="navigateView('dashboard')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+          <span>Dashboard</span>
+        </a>
+
+        <a class="nav-item" data-view="folders" onclick="navigateView('folders')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 8 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+          <span>Folders</span>
+          <span class="badge" id="sidebar-folders-count">0</span>
+        </a>
+
+        <a class="nav-item" data-view="browse" onclick="navigateView('browse')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/><path d="M8 10h8"/><path d="M8 14h4"/></svg>
+          <span>Browse Files</span>
+          <span class="badge" id="sidebar-docs-count">0</span>
+        </a>
+
+        <a class="nav-item" data-view="search" onclick="navigateView('search')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <span>Pencarian</span>
+        </a>
+
+        <a class="nav-item" data-view="chat" onclick="navigateView('chat')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
+          <span>Tanya ATLAS</span>
+        </a>
+
+        <div class="nav-section-title">Folder Terhubung</div>
+        <div class="sidebar-folders-container">
+          <div id="sidebar-folder-list" class="sidebar-folder-list">
+            <span style="font-size:0.75rem; color:var(--text-muted); padding:4px 8px;">Belum ada folder</span>
+          </div>
+        </div>
+
+        <div class="nav-section-title" style="margin-top:auto;">Sistem</div>
+        <a class="nav-item" data-view="settings" onclick="navigateView('settings')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span>Pengaturan</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="system-status-box">
+          <div class="status-text">
+            <span>Status Sistem</span>
+            <strong id="system-status-indicator">Aktif (Lokal)</strong>
+          </div>
+          <span class="status-dot pulsing" id="status-live-dot"></span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN WORKSPACE -->
+    <div id="main-area">
+
+      <!-- TOP HEADER -->
+      <header id="top-header">
+        <div class="header-left">
+          <button class="mobile-toggle-btn" onclick="toggleSidebar(true)" aria-label="Buka Menu">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+          </button>
+          <div class="header-breadcrumb">
+            <span>ATLAS</span>
+            <span>/</span>
+            <span class="current" id="breadcrumb-current">Dashboard</span>
+          </div>
+        </div>
+
+        <!-- Global Command Search -->
+        <div class="global-search-wrapper">
+          <div class="global-search-box" onclick="focusGlobalSearch()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" id="global-search-input" placeholder="Cari dokumen, folder, atau ketik pertanyaan...">
+            <span class="kbd-shortcut">Ctrl K</span>
+          </div>
+        </div>
+
+        <div class="header-right">
+          <!-- Indexing Live Pill -->
+          <div class="header-pill" id="header-indexing-pill">
+            <span class="status-dot" id="indexing-pill-dot"></span>
+            <span id="indexing-pill-text">Siap</span>
+          </div>
+
+          <!-- AI Status Pill -->
+          <div class="header-pill" id="header-ai-pill">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"><path d="M12 2v4"/><path d="m4.93 4.93 2.83 2.83"/><path d="M2 12h4"/><path d="m4.93 19.07 2.83-2.83"/><path d="M12 22v-4"/><path d="m19.07 19.07-2.83-2.83"/><path d="M22 12h-4"/><path d="m19.07 4.93-2.83 2.83"/></svg>
+            <span id="ai-pill-text">AI Terhubung</span>
+          </div>
+
+          <!-- Direct Add Folder -->
+          <button class="btn btn-primary btn-sm" onclick="openBrowseFolderModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>
+            <span>Tambah Folder</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- CONTENT PANELS -->
+      <main id="workspace-content">
+
+        <!-- ========================================================== -->
+        <!-- VIEW 1: DASHBOARD -->
+        <!-- ========================================================== -->
+        <section id="view-dashboard" class="view-panel active">
+          <div class="page-title-row">
+            <div class="page-title-col">
+              <h2>Dashboard Inteligensi Dokumen</h2>
+              <p>"Jangan cari file. Cari jawabannya."</p>
+            </div>
+            <div>
+              <button class="btn btn-secondary btn-sm" onclick="refreshAllData()">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                <span>Segarkan Data</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Stats Grid -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-card-header">
+                <span>Folder Terhubung</span>
+                <div class="stat-icon-wrap">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 8 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+                </div>
+              </div>
+              <div class="stat-number" id="dash-folders-count">0</div>
+              <div class="stat-footer">
+                <span>📁 Allowlist aktif</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-card-header">
+                <span>Total Dokumen</span>
+                <div class="stat-icon-wrap">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+                </div>
+              </div>
+              <div class="stat-number" id="dash-docs-count">0</div>
+              <div class="stat-footer">
+                <span>PDF, DOCX, TXT, MD</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-card-header">
+                <span>Dokumen Terindeks</span>
+                <div class="stat-icon-wrap">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"><path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+                </div>
+              </div>
+              <div class="stat-number" id="dash-indexed-count">0</div>
+              <div class="stat-footer">
+                <span>✓ Siap dicari dengan FTS5</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-card-header">
+                <span>Penyimpanan Lokal</span>
+                <div class="stat-icon-wrap">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                </div>
+              </div>
+              <div class="stat-number" id="dash-storage-count">0 MB</div>
+              <div class="stat-footer">
+                <span>🔒 100% tersimpan lokal</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Actions Bar -->
+          <div class="quick-actions-bar">
+            <h3>Aksi Cepat</h3>
+            <div class="quick-actions-grid">
+              <div class="action-card" onclick="openBrowseFolderModal()">
+                <div class="action-icon">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>
+                </div>
+                <div>
+                  <strong>Browse Folder</strong>
+                  <span>Hubungkan folder baru</span>
+                </div>
+              </div>
+
+              <div class="action-card" onclick="navigateView('search')">
+                <div class="action-icon">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                </div>
+                <div>
+                  <strong>Cari Dokumen</strong>
+                  <span>Pencarian teks lengkap</span>
+                </div>
+              </div>
+
+              <div class="action-card" onclick="navigateView('chat')">
+                <div class="action-icon">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
+                </div>
+                <div>
+                  <strong>Tanya ATLAS</strong>
+                  <span>Ajukan pertanyaan ke AI</span>
+                </div>
+              </div>
+
+              <div class="action-card" onclick="triggerReindexAll()">
+                <div class="action-icon">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                </div>
+                <div>
+                  <strong>Re-index All</strong>
+                  <span>Sinkronkan seluruh dokumen</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Indexing Progress Indicator -->
+          <div id="live-indexing-card" class="indexing-live-card">
+            <div class="indexing-live-header">
+              <strong>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" class="spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                Sedang Mengindeks Dokumen...
+              </strong>
+              <span id="indexing-live-pct" style="font-weight:700; color:var(--accent-green-bright);">0%</span>
+            </div>
+            <div class="progress-track">
+              <div id="indexing-live-bar" class="progress-fill"></div>
+            </div>
+            <div class="indexing-live-footer">
+              <span id="indexing-current-filename">Memulai pemindaian...</span>
+              <span id="indexing-processed-count">0 / 0 file</span>
+            </div>
+          </div>
+
+          <!-- Dashboard Columns -->
+          <div class="dashboard-columns">
+            <!-- Left: Recently Indexed Documents -->
+            <div class="content-card">
+              <div class="content-card-header">
+                <h3>Dokumen Terindeks Terbaru</h3>
+                <button class="btn btn-outline-green btn-sm" onclick="navigateView('browse')">Lihat Semua</button>
+              </div>
+
+              <div class="docs-table-wrapper">
+                <table class="custom-table" id="dashboard-recent-table">
+                  <thead>
+                    <tr>
+                      <th>Nama Dokumen</th>
+                      <th>Folder</th>
+                      <th>Ukuran</th>
+                      <th>Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboard-recent-tbody">
+                    <tr><td colspan="4" style="text-align:center; padding:30px; color:var(--text-muted);">Belum ada dokumen yang diindeks.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Right: Search History & Quick Questions -->
+            <div class="content-card">
+              <div class="content-card-header">
+                <h3>Pencarian Cepat & Saran</h3>
+              </div>
+
+              <div style="margin-bottom: 20px;">
+                <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:2px; font-weight:600; letter-spacing:0.5px;">PENCARIAN CEPAT</p>
+                <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">Coba salah satu pencarian berikut:</p>
+                <div class="prompt-chips" id="quick-search-chips">
+                  <span class="chip" onclick="executeSearchFromChip('pdf')">📄 Cari file PDF</span>
+                  <span class="chip" onclick="executeSearchFromChip('laporan')">📑 Cari dokumen laporan</span>
+                  <span class="chip" onclick="executeSearchFromChip('anggaran')">💰 Cari dokumen anggaran</span>
+                  <span class="chip" onclick="executeSearchFromChip('sop')">📋 Cari SOP</span>
+                  <span class="chip" onclick="executeSearchFromChip('kepegawaian')">📁 Cari dokumen kepegawaian</span>
+                  <span class="chip" onclick="executeSearchFromChip('2025')">📅 Cari dokumen tahun 2025</span>
+                </div>
+              </div>
+
+              <div>
+                <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:2px; font-weight:600; letter-spacing:0.5px;">TANYAKAN KE ATLAS</p>
+                <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">Coba tanyakan sesuatu tentang file Anda:</p>
+                <div class="prompt-chips" id="ask-atlas-chips">
+                  <span class="chip" onclick="askFromChip('Apa isi utama skripsi ini?')">📚 Apa isi utama skripsi ini?</span>
+                  <span class="chip" onclick="askFromChip('Ringkas isi dokumen ini')">📝 Ringkas dokumen ini</span>
+                  <span class="chip" onclick="askFromChip('Cari bagian yang membahas metodologi')">🔎 Cari bagian metodologi</span>
+                  <span class="chip" onclick="askFromChip('Cari dokumen tentang tugas kuliah')">📄 Cari dokumen tugas kuliah</span>
+                  <span class="chip" onclick="askFromChip('Cari file atau foto dari tahun lalu')">🖼️ Cari foto tahun lalu</span>
+                </div>
+              </div>
+
+              <!-- Security Guarantee Card -->
+              <div style="margin-top: 24px; padding: 14px; background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-md);">
+                <div style="display:flex; align-items:center; gap:8px; color:var(--accent-green-bright); font-size:0.85rem; font-weight:600; margin-bottom:4px;">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  Privasi & Keamanan Lokal Terjamin
+                </div>
+                <p style="font-size:0.78rem; color:var(--text-muted); line-height:1.4;">
+                  Dokumen asli tidak pernah diunggah ke server awan. Hanya potongan teks relevan yang dikirim saat Anda bertanya ke AI.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================================== -->
+        <!-- VIEW 2: FOLDER MANAGER -->
+        <!-- ========================================================== -->
+        <section id="view-folders" class="view-panel">
+          <div class="page-title-row">
+            <div class="page-title-col">
+              <h2>Kelola Folder Terhubung</h2>
+              <p>Folder lokal yang diizinkan untuk diakses dan diindeks oleh ATLAS.</p>
+            </div>
+            <div>
+              <button class="btn btn-primary btn-sm" onclick="openBrowseFolderModal()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>
+                <span>Tambah Folder</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="folders-grid" id="folders-page-grid">
+            <!-- Dynamic Folder Cards -->
+          </div>
+        </section>
+
+        <!-- ========================================================== -->
+        <!-- VIEW 3: BROWSE FILES (FILE EXPLORER) -->
+        <!-- ========================================================== -->
+        <section id="view-browse" class="view-panel">
+          <div class="page-title-row">
+            <div class="page-title-col">
+              <h2>Jelajahi Berkas (File Explorer)</h2>
+              <p>Jelajahi folder dan berkas lokal secara langsung, serta kelola dokumen terindeks.</p>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-outline-green btn-sm" onclick="openBrowseFolderModal()">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>
+                <span>+ Hubungkan Folder</span>
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="refreshBrowseView()">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+                <span>Segarkan</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Tab Bar -->
+          <div style="display:flex; gap:10px; margin-bottom:20px; border-bottom:1px solid var(--border-subtle); padding-bottom:12px;">
+            <button class="pill-btn active" id="tab-btn-explorer" onclick="switchBrowseTab('explorer')">
+              📁 Penjelajah Berkas Lokal
+            </button>
+            <button class="pill-btn" id="tab-btn-library" onclick="switchBrowseTab('library')">
+              📚 Dokumen Terindeks ATLAS (<span id="library-total-count">0</span>)
+            </button>
+          </div>
+
+          <!-- TAB 1: INTERACTIVE LOCAL FILE EXPLORER -->
+          <div id="browse-tab-explorer">
+            <!-- Explorer Top Navigation -->
+            <div class="quick-actions-bar" style="padding:14px 18px; margin-bottom:16px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <button class="icon-btn" onclick="navigateFsBrowseBack()" title="Kembali ke folder sebelumnya">←</button>
+                  <button class="icon-btn" onclick="navigateFsBrowseParent()" title="Naik Satu Tingkat (Folder Induk)">↑</button>
+                  <button class="icon-btn" onclick="refreshBrowseView()" title="Segarkan">↻</button>
+                  <div style="font-size:0.88rem; font-family:var(--font-mono); color:var(--accent-green-bright); display:flex; align-items:center; gap:6px;">
+                    <span style="color:var(--text-muted);">LOKASI:</span>
+                    <strong id="fs-browse-path-label">/home/darfinstar/Documents</strong>
+                  </div>
+                </div>
+
+                <div class="prompt-chips" style="margin-bottom:0;" id="fs-browse-quick-locations">
+                  <span class="chip" onclick="loadFsBrowse('~/Documents')">📁 Documents</span>
+                  <span class="chip" onclick="loadFsBrowse('~')">🏠 Home</span>
+                  <span class="chip" onclick="loadFsBrowse('~/Desktop')">💻 Desktop</span>
+                  <span class="chip" onclick="loadFsBrowse('~/Downloads')">📥 Downloads</span>
+                </div>
+              </div>
+
+              <!-- Search in current folder -->
+              <div style="display:flex; gap:10px;">
+                <input type="text" id="fs-browse-filter-input" class="custom-input" placeholder="Filter berkas atau folder di direktori ini..." oninput="filterFsBrowseList()">
+                <button class="btn btn-outline-green btn-sm" onclick="connectCurrentBrowsingFolder()" title="Hubungkan seluruh isi folder ini ke ATLAS">
+                  <span>+ Hubungkan Folder Ini</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Subdirectories Grid -->
+            <div style="margin-bottom:18px;">
+              <label style="font-size:0.78rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:8px;">
+                Subfolder Direktori (<span id="fs-dirs-count">0</span>)
+              </label>
+              <div class="folders-grid" id="fs-browse-dirs-grid" style="grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));">
+                <!-- Dynamic folder cards -->
+              </div>
+            </div>
+
+            <!-- Files in Directory Table -->
+            <div class="content-card">
+              <div class="content-card-header">
+                <h3>Berkas di Direktori Ini (<span id="fs-files-count">0</span>)</h3>
+              </div>
+              <div class="docs-table-wrapper">
+                <table class="custom-table">
+                  <thead>
+                    <tr>
+                      <th>Nama Berkas</th>
+                      <th>Ukuran</th>
+                      <th>Terakhir Diubah</th>
+                      <th>Status Indeks</th>
+                      <th>Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fs-browse-files-tbody">
+                    <tr><td colspan="5" style="text-align:center; padding:30px; color:var(--text-muted);">Memuat berkas direktori...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: INDEXED DOCUMENTS LIBRARY -->
+          <div id="browse-tab-library" style="display:none;">
+            <!-- Filter & Search Controls -->
+            <div class="filter-bar">
+              <div class="filter-pills">
+                <button class="pill-btn active" onclick="setFileTypeFilter('all', this)">Semua (<span id="count-type-all">0</span>)</button>
+                <button class="pill-btn" onclick="setFileTypeFilter('pdf', this)">PDF (<span id="count-type-pdf">0</span>)</button>
+                <button class="pill-btn" onclick="setFileTypeFilter('docx', this)">DOCX (<span id="count-type-docx">0</span>)</button>
+                <button class="pill-btn" onclick="setFileTypeFilter('txt', this)">TXT (<span id="count-type-txt">0</span>)</button>
+                <button class="pill-btn" onclick="setFileTypeFilter('md', this)">Markdown (<span id="count-type-md">0</span>)</button>
+              </div>
+
+              <div class="filter-controls">
+                <input type="text" id="library-search-input" class="custom-input" placeholder="Cari nama dokumen..." style="max-width:200px; padding:6px 12px; font-size:0.82rem;" oninput="debounceLibrarySearch()">
+                <select class="custom-select" id="sort-docs-select" onchange="loadDocumentsView()">
+                  <option value="modified_desc">Terbaru Diubah</option>
+                  <option value="name_asc">Nama (A-Z)</option>
+                  <option value="name_desc">Nama (Z-A)</option>
+                  <option value="size_desc">Ukuran Terbesar</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Documents List Table -->
+            <div class="content-card">
+              <div class="docs-table-wrapper">
+                <table class="custom-table">
+                  <thead>
+                    <tr>
+                      <th>Dokumen</th>
+                      <th>Folder Induk</th>
+                      <th>Ukuran</th>
+                      <th>Terakhir Diubah</th>
+                      <th>Status</th>
+                      <th>Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody id="documents-table-body">
+                    <tr><td colspan="6" style="text-align:center; padding:30px; color:var(--text-muted);">Memuat berkas dokumen...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================================== -->
+        <!-- VIEW 4: SEARCH -->
+        <!-- ========================================================== -->
+        <section id="view-search" class="view-panel">
+          <div class="search-hero">
+            <div class="big-search-box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              <input type="text" id="main-search-input" placeholder="Ketik kata kunci, nomor dokumen, atau topik..." onkeydown="handleSearchKey(event)">
+              <button class="btn btn-primary btn-sm" onclick="performSearch()">Cari</button>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; font-size:0.82rem; color:var(--text-muted);">
+              <span>💡 Tekan <strong>Enter</strong> untuk mencari dengan SQLite FTS5</span>
+              <span id="search-status-counter">0 hasil ditemukan</span>
+            </div>
+          </div>
+
+          <div class="search-results-container" id="search-results-list">
+            <!-- Initial Empty Search State -->
+            <div style="text-align:center; padding:60px 20px; color:var(--text-muted);">
+              <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" style="margin-bottom:12px; color:var(--text-muted); opacity:0.5;"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              <h3 style="color:var(--text-primary); font-size:1.1rem; margin-bottom:6px;">Mulai Penelusuran Dokumen</h3>
+              <p style="font-size:0.88rem; max-width:450px; margin:0 auto;">Cari informasi spesifik seperti angka anggaran, SOP, nama, atau isi kontrak di seluruh folder Anda.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================================== -->
+        <!-- VIEW 5: ASK ATLAS (AI CHAT) -->
+        <!-- ========================================================== -->
+        <section id="view-chat" class="view-panel">
+          <div class="chat-container">
+            <div class="chat-header-bar">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <div class="avatar ai-avatar">A</div>
+                <div>
+                  <h3 style="font-size:0.95rem; font-weight:700;">Tanya ATLAS</h3>
+                  <p style="font-size:0.75rem; color:var(--text-muted);">Menjawab secara akurat berlandaskan dokumen lokal Anda</p>
+                </div>
+              </div>
+              <div id="chat-ai-status-badge" class="header-pill">
+                <span class="status-dot" id="chat-status-dot"></span>
+                <span id="chat-status-text">Memeriksa AI...</span>
+              </div>
+            </div>
+
+            <!-- Messages Area -->
+            <div class="chat-messages-area" id="chat-messages">
+              <!-- Welcome AI Message -->
+              <div class="chat-bubble assistant">
+                <div class="avatar ai-avatar">A</div>
+                <div class="bubble-content">
+                  <p>Halo! Saya <strong>ATLAS</strong>, asisten cerdas untuk dokumen lokal Anda.</p>
+                  <p style="margin-top:6px; color:var(--text-secondary);">Ajukan pertanyaan apa pun seputar dokumen yang telah terhubung. Jawaban saya akan bersumber langsung dari fakta di dalam file Anda.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Chat Input Bar -->
+            <div class="chat-input-container">
+              <div class="prompt-chips">
+                <span class="chip" onclick="askFromChip('Apa isi utama skripsi ini?')">📚 Apa isi utama skripsi ini?</span>
+                <span class="chip" onclick="askFromChip('Ringkas isi dokumen ini')">📝 Ringkas dokumen ini</span>
+                <span class="chip" onclick="askFromChip('Cari bagian yang membahas metodologi')">🔎 Cari bagian metodologi</span>
+                <span class="chip" onclick="askFromChip('Cari dokumen tentang tugas kuliah')">📄 Cari dokumen tugas kuliah</span>
+              </div>
+
+              <div class="chat-input-box">
+                <textarea id="chat-input-textarea" rows="1" placeholder="Tanyakan sesuatu tentang dokumen Anda..." onkeydown="handleChatKey(event)"></textarea>
+                <button class="btn btn-primary btn-sm" id="chat-send-btn" onclick="sendChatMessage()">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                  <span>Kirim</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================================== -->
+        <!-- VIEW 6: SETTINGS -->
+        <!-- ========================================================== -->
+        <section id="view-settings" class="view-panel">
+          <div class="page-title-row">
+            <div class="page-title-col">
+              <h2>Pengaturan ATLAS</h2>
+              <p>Konfigurasi AI provider, parameter pemrosesan dokumen, dan server lokal.</p>
+            </div>
+          </div>
+
+          <div class="settings-grid">
+            <!-- AI Provider Card -->
+            <div class="settings-card">
+              <h3>Konfigurasi AI (OpenRouter)</h3>
+              <p class="desc">Kunci API disimpan secara lokal di mesin Anda dan tidak pernah dibagikan.</p>
+
+              <div class="form-group">
+                <label>OpenRouter API Key</label>
+                <div class="input-with-action">
+                  <input type="password" id="setting-api-key" class="custom-input" placeholder="sk-or-v1-••••••••••••••••">
+                  <button class="btn btn-secondary btn-sm" type="button" onclick="toggleApiKeyVisibility()">Lihat</button>
+                </div>
+                <small style="color:var(--text-muted); font-size:0.75rem; margin-top:4px; display:block;">Dapatkan kunci gratis di openrouter.ai</small>
+              </div>
+
+              <div class="form-group">
+                <label>Model AI</label>
+                <select id="setting-ai-model" class="custom-input">
+                  <option value="openai/gpt-4o-mini">OpenAI GPT-4o Mini (Hemat & Cerdas)</option>
+                  <option value="anthropic/claude-3-haiku">Anthropic Claude 3 Haiku (Cepat)</option>
+                  <option value="meta-llama/llama-3.1-8b-instruct:free">Meta Llama 3.1 8B (Free Tier)</option>
+                  <option value="google/gemini-flash-1.5">Google Gemini Flash 1.5</option>
+                </select>
+              </div>
+
+              <div style="display:flex; gap:10px; margin-top:20px;">
+                <button class="btn btn-primary" onclick="saveSettings()">Simpan Pengaturan</button>
+                <button class="btn btn-outline-green" id="btn-test-ai" onclick="testAiConnection()">Uji Koneksi AI</button>
+              </div>
+            </div>
+
+            <!-- Server & Indexing Parameters -->
+            <div class="settings-card">
+              <h3>Parameter Pengindeksan & Sistem</h3>
+              <p class="desc">Pengaturan teknis parser dan pemecahan teks dokumen.</p>
+
+              <div class="form-group">
+                <label>Ukuran Chunk Teks (Karakter)</label>
+                <input type="number" id="setting-chunk-size" class="custom-input" value="1200">
+              </div>
+
+              <div class="form-group">
+                <label>Overlap Antar Chunk (Karakter)</label>
+                <input type="number" id="setting-chunk-overlap" class="custom-input" value="200">
+              </div>
+
+              <div class="form-group">
+                <label>Port Aplikasi Lokal</label>
+                <input type="text" id="setting-port" class="custom-input" value="3001" disabled>
+                <small style="color:var(--text-muted); font-size:0.75rem;">Port ditentukan saat memulai server melalui environment PORT.</small>
+              </div>
+
+              <div style="margin-top:20px;">
+                <button class="btn btn-secondary" onclick="saveSettings()">Simpan Parameter</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- ========================================================== -->
+  <!-- MODALS -->
+  <!-- ========================================================== -->
+
+  <!-- Modal 1: Hubungkan Folder Dokumen (Visual Local Browser) -->
+  <div id="modal-browse-folder" class="modal-backdrop">
+    <div class="modal-card" style="max-width: 640px;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:34px; height:34px; border-radius:var(--radius-sm); background:var(--accent-green-bg); color:var(--accent-green-bright); display:flex; align-items:center; justify-content:center; border:1px solid var(--border-accent);">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 8 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+          </div>
+          <div>
+            <h3 style="font-size:1.1rem; font-weight:700;">Hubungkan Folder Dokumen</h3>
+            <p style="font-size:0.75rem; color:var(--text-muted);">Pilih folder lokal yang ingin digunakan ATLAS untuk pencarian dokumen</p>
+          </div>
+        </div>
+        <button class="icon-btn" onclick="closeModal('modal-browse-folder')">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 20px 24px;">
+        <!-- Quick Location Shortcuts & Browse Folder Button -->
+        <div style="margin-bottom: 14px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <label style="font-size:0.76rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin:0;">Lokasi Pintas</label>
+            <span style="font-size:0.72rem; color:var(--text-muted);">Pilih via dialog sistem atau gunakan navigasi</span>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button class="btn btn-outline-green btn-sm" id="btn-browse-folder" onclick="handleBrowseFolderClick()" style="font-size:0.8rem; padding:6px 14px; display:inline-flex; align-items:center; gap:6px; font-weight:600;" title="Buka folder picker bawaan OS / Browser">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 8 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+              <span id="btn-browse-folder-text">📁 Browse Folder</span>
+            </button>
+            <div class="prompt-chips" id="fs-quick-locations" style="display:inline-flex; margin:0; flex-wrap:wrap; gap:6px;">
+              <span class="chip" onclick="loadFsExplorer('~/Documents')">📁 Documents</span>
+              <span class="chip" onclick="loadFsExplorer('~')">🏠 Home</span>
+              <span class="chip" onclick="loadFsExplorer('~/Desktop')">💻 Desktop</span>
+              <span class="chip" onclick="loadFsExplorer('~/Downloads')">📥 Downloads</span>
+            </div>
+          </div>
+          <!-- Hidden fallback input for browser folder picker with webkitdirectory -->
+          <input type="file" id="browser-folder-picker-input" webkitdirectory directory style="display:none;" onchange="handleBrowserFolderSelected(event)">
+        </div>
+
+        <!-- Interactive Local Directory Explorer -->
+        <div class="fs-explorer-box" style="margin-top:0; margin-bottom: 16px;">
+          <div class="fs-explorer-header">
+            <div style="display:flex; align-items:center; gap:8px; overflow:hidden; flex:1;">
+              <span style="color:var(--text-muted); font-size:0.75rem;">DIREKTORI:</span>
+              <span id="fs-current-path-label" style="color:var(--accent-green-bright); font-size:0.82rem; font-family:var(--font-mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">/home/darfinstar/Documents</span>
+            </div>
+            <button class="btn btn-secondary btn-sm" style="padding:3px 10px; font-size:0.75rem;" onclick="navigateFsParent()">⬆ Naik Satu Tingkat</button>
+          </div>
+          <div class="fs-dir-list" id="fs-explorer-dir-list" style="max-height: 210px;">
+            <div style="padding:16px; color:var(--text-muted); font-size:0.82rem; text-align:center;">Memuat daftar folder...</div>
+          </div>
+        </div>
+
+        <!-- Selected Folder Preview Card -->
+        <div style="margin-bottom: 16px;">
+          <label style="font-size:0.76rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:6px;">Folder Terpilih</label>
+          <div id="selected-folder-preview-card" style="background:var(--bg-card); border:1px solid var(--border-accent); border-radius:var(--radius-md); padding:12px 16px; display:flex; align-items:center; gap:12px;">
+            <div style="width:36px; height:36px; border-radius:var(--radius-sm); background:var(--accent-green-bg); color:var(--accent-green); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 8 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+            </div>
+            <div style="overflow:hidden; flex:1;">
+              <strong id="selected-folder-name" style="font-size:0.95rem; color:var(--text-primary); display:block;">Pilih folder di atas</strong>
+              <span id="selected-folder-path" style="font-size:0.78rem; color:var(--text-muted); font-family:var(--font-mono); word-break:break-all;">Klik tombol "Pilih" pada folder di daftar</span>
+            </div>
+            <button class="btn btn-outline-green btn-sm" id="btn-select-current-dir" onclick="selectCurrentBrowsingDirectory()" style="font-size:0.78rem;">
+              Pilih Folder Ini
+            </button>
+          </div>
+          <input type="hidden" id="modal-folder-path-input">
+        </div>
+
+        <!-- Privacy Notice -->
+        <div style="padding:10px 14px; background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); font-size:0.78rem; color:var(--text-secondary); line-height:1.5;">
+          <div>📄 <strong>Format Didukung:</strong> PDF · DOCX · TXT · MD</div>
+          <div style="color:var(--accent-green-bright); margin-top:2px;">🔒 <strong>Local-First:</strong> File tetap tersimpan di komputer Anda dan tidak diunggah ke cloud.</div>
+        </div>
+      </div>
+      <div class="modal-footer" style="padding:14px 24px;">
+        <button class="btn btn-secondary" onclick="closeModal('modal-browse-folder')">Batal</button>
+        <button class="btn btn-primary" id="btn-confirm-connect-trigger" onclick="requestConnectFolderConfirmation()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Hubungkan & Indeks</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 1b: Custom Confirmation Modal (Hubungkan Folder?) -->
+  <div id="modal-confirm-connect" class="modal-backdrop">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:34px; height:34px; border-radius:var(--radius-sm); background:var(--accent-green-bg); color:var(--accent-green-bright); display:flex; align-items:center; justify-content:center; border:1px solid var(--border-accent);">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 8 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+          </div>
+          <h3 style="font-size:1.1rem; font-weight:700;">Hubungkan Folder?</h3>
+        </div>
+        <button class="icon-btn" onclick="closeModal('modal-confirm-connect')">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 20px 24px;">
+        <div style="padding: 14px 16px; background: var(--bg-card); border: 1px solid var(--border-accent); border-radius: var(--radius-md); margin-bottom: 16px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" style="color:var(--accent-green);"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 8 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+            <strong id="confirm-connect-name" style="font-size: 1.05rem; color: var(--text-primary);">UKM FOKUS</strong>
+          </div>
+          <span id="confirm-connect-path" style="font-size: 0.8rem; color: var(--text-muted); font-family: var(--font-mono); word-break: break-all; display:block;">/home/darfinstar/Documents/UKM FOKUS</span>
+        </div>
+        <p style="font-size: 0.88rem; color: var(--text-secondary); line-height: 1.5; margin-bottom: 14px;">
+          ATLAS akan membaca dokumen yang didukung (PDF, DOCX, TXT, MD) dari folder ini untuk keperluan indexing lokal.
+        </p>
+        <div style="padding: 10px 14px; background: var(--accent-green-bg); border: 1px solid var(--border-accent); border-radius: var(--radius-sm); font-size: 0.82rem; color: var(--accent-green-bright); display:flex; align-items:center; gap:8px;">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span>File tetap berada di komputer Anda (tidak diunggah ke cloud).</span>
+        </div>
+      </div>
+      <div class="modal-footer" style="padding: 14px 24px;">
+        <button class="btn btn-secondary" onclick="closeModal('modal-confirm-connect')">Batal</button>
+        <button class="btn btn-primary" id="btn-execute-connect" onclick="executeConnectFolder()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Hubungkan & Indeks</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 2: Document Preview Modal -->
+  <div id="modal-doc-preview" class="modal-backdrop">
+    <div class="modal-card modal-preview">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="ext-badge ext-txt" id="preview-badge-ext">TXT</span>
+          <h3 id="preview-doc-title" style="word-break:break-all;">Nama Dokumen</h3>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="copyPreviewContent()">Salin Teks</button>
+          <button class="icon-btn" onclick="closeModal('modal-doc-preview')">✕</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="doc-preview-meta">
+          <span>📁 Folder: <strong id="preview-meta-folder">-</strong></span>
+          <span>📦 Ukuran: <strong id="preview-meta-size">-</strong></span>
+          <span>📅 Terakhir Diubah: <strong id="preview-meta-date">-</strong></span>
+          <span>🔖 Status: <strong style="color:var(--accent-green-bright);">Terindeks</strong></span>
+        </div>
+        <div class="preview-text-box" id="preview-text-content">
+          Memuat isi dokumen...
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-doc-preview')">Tutup Pratinjau</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: Confirm Delete Modal -->
+  <div id="modal-confirm-delete" class="modal-backdrop">
+    <div class="modal-card" style="max-width:440px;">
+      <div class="modal-header">
+        <h3>Hapus dari Indeks ATLAS?</h3>
+        <button class="icon-btn" onclick="closeModal('modal-confirm-delete')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:12px;">
+          Apakah Anda yakin ingin menghapus folder <strong id="delete-target-name" style="color:var(--text-primary);">-</strong> dari indeks pencarian ATLAS?
+        </p>
+        <p style="font-size:0.8rem; color:var(--accent-green-bright); padding:10px; background:var(--accent-green-bg); border-radius:var(--radius-sm); border:1px solid var(--border-accent);">
+          🔒 <strong>Keamanan Berkas:</strong> Berkas asli di komputer Anda <strong>TIDAK AKAN DIHAPUS</strong>. Hanya data indeks pencarian di aplikasi yang dibersihkan.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-confirm-delete')">Batal</button>
+        <button class="btn btn-danger" id="confirm-delete-action-btn" onclick="executeConfirmedDelete()">Hapus Indeks</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST CONTAINER -->
+  <div id="toast-container"></div>
+
+  <!-- APPLICATION SCRIPTS -->
+  <script src="/js/app.js"></script>
+</body>
+</html>

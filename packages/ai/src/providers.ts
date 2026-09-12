@@ -1,0 +1,180 @@
+import axios from 'axios';
+import { createLogger } from '@atlas/core';
+
+const logger = createLogger('AI_PROVIDER');
+
+export interface AIMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface AIResponse {
+  content: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
+export interface AIProvider {
+  name: string;
+  generateResponse(messages: AIMessage[], options?: any): Promise<AIResponse>;
+  generateEmbedding(text: string): Promise<number[]>;
+  isConfigured(): boolean;
+}
+
+export class OpenRouterProvider implements AIProvider {
+  name = 'OpenRouter';
+  private apiKey: string;
+  private baseURL = 'https://openrouter.ai/api/v1';
+  private model: string;
+  private embeddingModel: string;
+
+  constructor(config: {
+    apiKey: string;
+    model: string;
+    embeddingModel: string;
+  }) {
+    this.apiKey = config.apiKey;
+    this.model = config.model;
+    this.embeddingModel = config.embeddingModel;
+  }
+
+  async generateResponse(messages: AIMessage[], options: any = {}): Promise<AIResponse> {
+    if (!this.isConfigured()) {
+      throw new Error('OpenRouter not configured. Please set API key.');
+    }
+
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/chat/completions`,
+        {
+          model: this.model,
+          messages,
+          max_tokens: options.maxTokens || 1000,
+          temperature: options.temperature || 0.7,
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+            'X-Title': 'ATLAS Document Intelligence',
+          }
+        }
+      );
+
+      const choice = response.data.choices?.[0];
+      if (!choice) {
+        throw new Error('No response from AI model');
+      }
+
+      return {
+        content: choice.message.content,
+        usage: response.data.usage
+      };
+    } catch (error: any) {
+      logger.error('OpenRouter API error:', error.response?.data || error.message);
+      throw new Error(`AI request failed: ${error.response?.data?.error?.message || error.message}`);
+    }
+  }
+
+  async generateEmbedding(text: string): Promise<number[]> {
+    if (!this.isConfigured()) {
+      throw new Error('OpenRouter not configured. Please set API key.');
+    }
+
+    try {
+      const response = await axios.post(
+        `${this.baseURL}/embeddings`,
+        {
+          model: this.embeddingModel,
+          input: text,
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+          }
+        }
+      );
+
+      const embedding = response.data.data?.[0]?.embedding;
+      if (!embedding) {
+        throw new Error('No embedding generated');
+      }
+
+      return embedding;
+    } catch (error: any) {
+      logger.error('OpenRouter embedding error:', error.response?.data || error.message);
+      throw new Error(`Embedding generation failed: ${error.response?.data?.error?.message || error.message}`);
+    }
+  }
+
+  isConfigured(): boolean {
+    return Boolean(this.apiKey && this.model);
+  }
+}
+
+export class MockAIProvider implements AIProvider {
+  name = 'Mock AI';
+
+  async generateResponse(messages: AIMessage[]): Promise<AIResponse> {
+    const userMessage = messages.find(m => m.role === 'user')?.content || '';
+    
+    // Simple mock responses based on content
+    let response = '';
+    
+    if (userMessage.toLowerCase().includes('anggaran') || userMessage.toLowerCase().includes('biaya')) {
+      response = 'Berdasarkan analisis dokumen, saya menemukan informasi terkait anggaran. Namun untuk memberikan jawaban yang akurat, silakan periksa dokumen sumber yang tercantum di bawah.';
+    } else if (userMessage.toLowerCase().includes('bandingkan')) {
+      response = 'Saya telah mengidentifikasi dokumen-dokumen yang relevan untuk perbandingan. Informasi detail dapat ditemukan dalam dokumen sumber.';
+    } else {
+      response = `Saya menemukan informasi yang mungkin relevan dengan pertanyaan "${userMessage}". Silakan periksa dokumen sumber untuk detail lengkapnya.`;
+    }
+
+    return {
+      content: response,
+      usage: {
+        prompt_tokens: userMessage.length,
+        completion_tokens: response.length,
+        total_tokens: userMessage.length + response.length
+      }
+    };
+  }
+
+  async generateEmbedding(text: string): Promise<number[]> {
+    // Generate a mock embedding (random vector for testing)
+    const dimension = 1536; // OpenAI embedding dimension
+    const embedding = Array(dimension).fill(0).map(() => Math.random() - 0.5);
+    return embedding;
+  }
+
+  isConfigured(): boolean {
+    return true; // Mock provider is always "configured"
+  }
+}
+
+export function createAIProvider(config: {
+  provider: string;
+  apiKey?: string;
+  model: string;
+  embeddingModel: string;
+}): AIProvider {
+  switch (config.provider) {
+    case 'openrouter':
+      if (!config.apiKey) {
+        logger.warn('OpenRouter API key not provided, using mock provider');
+        return new MockAIProvider();
+      }
+      return new OpenRouterProvider({
+        apiKey: config.apiKey,
+        model: config.model,
+        embeddingModel: config.embeddingModel
+      });
+    
+    case 'mock':
+    default:
+      return new MockAIProvider();
+  }
+}

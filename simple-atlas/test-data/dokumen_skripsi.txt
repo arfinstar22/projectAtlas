@@ -1,0 +1,10 @@
+Judul Penelitian: Analisis dan Perancangan Sistem Klasifikasi Citra Medis Berbasis Deep Learning
+
+Bab 1 Pendahuluan:
+Penelitian skripsi ini membahas implementasi algoritma convolutional neural network (CNN) untuk klasifikasi citra radiologi paru-paru secara otomatis.
+
+Bab 3 Metodologi Penelitian:
+Metodologi penelitian yang digunakan adalah metode eksperimental dengan tahapan: pengumpulan dataset 1.200 citra, pra-pemrosesan data augmentasi, pelatihan model arsitektur ResNet-50, dan evaluasi matriks confusion.
+
+Bab 5 Kesimpulan:
+Kesimpulan dari penelitian skripsi ini membuktikan bahwa model ResNet-50 berhasil mencapai tingkat akurasi sebesar 94.8% dan sensitivitas 92.3% dalam mendeteksi anomali pada citra paru-paru.
