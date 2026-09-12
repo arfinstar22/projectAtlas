@@ -379,5 +379,22 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
         memoryUsage: process.memoryUsage()
       };
     });
+
+    // Filesystem security - path traversal protection
+    fastify.get('/fs/explore', async (request, reply) => {
+      const { path: requestedPath } = request.query as { path?: string };
+      if (!requestedPath) {
+        reply.status(400);
+        return { error: { code: 'INVALID_PATH', message: 'Path parameter required' } };
+      }
+      
+      const isAllowed = await folderService.validateFolderAccess(requestedPath);
+      if (!isAllowed) {
+        reply.status(403);
+        return { error: { code: 'ACCESS_DENIED', message: 'Access to this path is not allowed' } };
+      }
+      
+      return { allowed: true, path: requestedPath };
+    });
   }, { prefix: '/api' });
 }

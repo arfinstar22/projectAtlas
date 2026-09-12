@@ -128,12 +128,14 @@ export class AtlasServer {
   private async setupRoutes(): Promise<void> {
     // Health check
     this.app.get('/api/health', async () => {
-      const stats = this.db.getStats();
+      const stats = await this.db.getStats();
+      const providerInfo = this.aiService.getProviderInfo();
       return {
         status: 'ok',
         timestamp: new Date().toISOString(),
         version: process.env.npm_package_version || '0.1.0',
-        stats
+        stats,
+        aiConfigured: providerInfo.configured
       };
     });
 

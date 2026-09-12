@@ -46,4 +46,15 @@ export const api = {
   getJob: (id: string) => client.get(`/indexing/jobs/${id}`).then(res => res.data),
   cancelJob: (id: string) => client.post(`/indexing/jobs/${id}/cancel`).then(res => res.data),
   getIndexingStats: () => client.get('/indexing/stats').then(res => res.data),
+
+  // AI Chat
+  chat: (message: string, conversationId?: string) => 
+    client.post('/chat', { message, conversationId }).then(res => res.data),
+  
+  getAIStatus: () => client.get('/ai/status').then(res => res.data),
+  testAIConnection: () => client.post('/ai/test').then(res => res.data),
+
+  // Filesystem security
+  checkPathAccess: (path: string) => 
+    client.get('/fs/explore', { params: { path } }).then(res => res.data),
 };

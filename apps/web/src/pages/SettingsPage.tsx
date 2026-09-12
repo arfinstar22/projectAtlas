@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Settings as SettingsIcon, 
   Folder, 
@@ -8,8 +8,11 @@ import {
   Save,
   TestTube,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  Loader2
 } from 'lucide-react';
+import { api } from '../services/api';
+import toast from 'react-hot-toast';
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general');
@@ -17,7 +20,7 @@ export function SettingsPage() {
     ai: {
       provider: 'openrouter',
       apiKey: '',
-      model: 'openai/gpt-3.5-turbo',
+      model: 'openai/gpt-4o-mini',
       embeddingModel: 'openai/text-embedding-ada-002'
     },
     indexing: {
@@ -32,6 +35,8 @@ export function SettingsPage() {
       autoIndex: true
     }
   });
+  const [aiStatus, setAiStatus] = useState<{ provider: string; configured: boolean; available: boolean } | null>(null);
+  const [testingConnection, setTestingConnection] = useState(false);
 
   const tabs = [
     { id: 'general', name: 'Umum', icon: SettingsIcon },
@@ -40,14 +45,50 @@ export function SettingsPage() {
     { id: 'security', name: 'Keamanan', icon: Shield },
   ];
 
-  const handleSave = () => {
-    // TODO: Implement settings save
-    console.log('Saving settings:', settings);
+  useEffect(() => {
+    loadAIStatus();
+  }, []);
+
+  const loadAIStatus = async () => {
+    try {
+      const status = await api.getAIStatus();
+      setAiStatus(status);
+      // Update local settings with actual values from server
+      setSettings(prev => ({
+        ...prev,
+        ai: {
+          ...prev.ai,
+          provider: status.provider.toLowerCase(),
+          apiKey: status.configured ? '••••••••••••••••' : '',
+          model: 'openai/gpt-4o-mini',
+          embeddingModel: 'openai/text-embedding-ada-002'
+        }
+      }));
+    } catch (error) {
+      console.error('Failed to load AI status:', error);
+    }
+  };
+
+  const handleSave = async () => {
+    // For now, just show success - actual persistence would need server endpoint
+    toast.success('Pengaturan disimpan (simulasi - persistensi server belum diimplementasikan)');
   };
 
   const testConnection = async () => {
-    // TODO: Implement AI provider connection test
-    console.log('Testing AI connection...');
+    setTestingConnection(true);
+    try {
+      const result = await api.testAIConnection();
+      if (result.success) {
+        toast.success('Koneksi AI berhasil!');
+        await loadAIStatus();
+      } else {
+        toast.error(`Gagal: ${result.error || 'Unknown error'}`);
+      }
+    } catch (error: any) {
+      toast.error(`Gagal: ${error.response?.data?.error?.message || error.message}`);
+    } finally {
+      setTestingConnection(false);
+    }
   };
 
   return (
@@ -142,6 +183,29 @@ export function SettingsPage() {
                 Konfigurasi AI Provider
               </h3>
 
+              {/* AI Status Card */}
+              <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 ${
+                aiStatus?.configured ? 'border-green-200 dark:border-green-800' : 'border-yellow-200 dark:border-yellow-800'
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${
+                    aiStatus?.configured ? 'bg-green-100 dark:bg-green-900/30' : 'bg-yellow-100 dark:bg-yellow-900/30'
+                  }`}>
+                    <CheckCircle2 className={`w-5 h-5 ${aiStatus?.configured ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900 dark:text-gray-100">
+                      {aiStatus?.configured ? 'AI Provider Terkonfigurasi' : 'AI Provider Belum Dikonfigurasi'}
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                      {aiStatus?.configured 
+                        ? `Provider: ${aiStatus.provider} • Model: ${settings.ai.model} • Siap digunakan`
+                        : 'Masukkan API key OpenRouter untuk mengaktifkan fitur Tanya ATLAS'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
                 <div className="flex items-start gap-3">
                   <AlertCircle className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
@@ -234,10 +298,20 @@ export function SettingsPage() {
 
                 <button
                   onClick={testConnection}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  disabled={testingConnection}
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <TestTube className="w-4 h-4" />
-                  Test Koneksi
+                  {testingConnection ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Menguji...
+                    </>
+                  ) : (
+                    <>
+                      <TestTube className="w-4 h-4" />
+                      Test Koneksi
+                    </>
+                  )}
                 </button>
               </div>
             </div>

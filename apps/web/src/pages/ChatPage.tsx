@@ -10,6 +10,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { api } from '../services/api';
+import toast from 'react-hot-toast';
 
 export function ChatPage() {
   const [messages, setMessages] = useState<Array<{
@@ -40,33 +41,27 @@ export function ChatPage() {
     setIsLoading(true);
 
     try {
-      // For MVP, we'll simulate AI response using search results
-      const searchResults = await api.search({
-        query: input.trim(),
-        mode: 'keyword',
-        limit: 3
-      });
-
-      // Simulate AI processing
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Call actual AI service from server
+      const response = await api.chat(input.trim());
 
       const aiResponse = {
         id: (Date.now() + 1).toString(),
         type: 'assistant' as const,
-        content: generateMockResponse(input.trim(), searchResults.results),
-        sources: searchResults.results.slice(0, 3),
+        content: response.response,
+        sources: response.sources,
         timestamp: new Date()
       };
 
       setMessages(prev => [...prev, aiResponse]);
-    } catch (error) {
+    } catch (error: any) {
       const errorMessage = {
         id: (Date.now() + 1).toString(),
         type: 'assistant' as const,
-        content: 'Maaf, terjadi kesalahan saat memproses pertanyaan Anda. Pastikan dokumen sudah terindeks dan coba lagi.',
+        content: error.response?.data?.error?.message || 'Maaf, terjadi kesalahan saat memproses pertanyaan Anda. Pastikan dokumen sudah terindeks dan coba lagi.',
         timestamp: new Date()
       };
       setMessages(prev => [...prev, errorMessage]);
+      toast.error('Gagal mendapatkan jawaban dari AI');
     } finally {
       setIsLoading(false);
     }
@@ -211,21 +206,4 @@ function MessageBubble({ message }: { message: any }) {
   );
 }
 
-function generateMockResponse(query: string, results: any[]): string {
-  if (results.length === 0) {
-    return 'Maaf, saya tidak menemukan informasi yang relevan dengan pertanyaan Anda dalam dokumen yang tersedia. Pastikan dokumen yang berisi informasi tersebut sudah terindeks.';
-  }
-
-  // Simple mock response generation
-  const queryLower = query.toLowerCase();
-  
-  if (queryLower.includes('anggaran') || queryLower.includes('biaya') || queryLower.includes('total')) {
-    return 'Berdasarkan dokumen yang saya analisis, informasi anggaran dapat ditemukan di beberapa dokumen. Namun untuk memberikan jawaban yang akurat, saya memerlukan integrasi AI yang lebih lengkap. Silakan periksa dokumen sumber di bawah untuk detail lengkapnya.';
-  }
-  
-  if (queryLower.includes('bandingkan') || queryLower.includes('perbedaan')) {
-    return 'Saya menemukan dokumen yang mungkin berkaitan dengan permintaan perbandingan Anda. Untuk analisis perbandingan yang detail, fitur AI akan segera tersedia. Silakan lihat dokumen sumber untuk informasi lebih lanjut.';
-  }
-  
-  return `Saya menemukan ${results.length} dokumen yang relevan dengan pertanyaan Anda. Berdasarkan konten yang tersedia, informasi yang Anda cari kemungkinan ada dalam dokumen-dokumen tersebut. Silakan periksa sumber di bawah untuk detail lengkapnya.`;
-}
+export default ChatPage;
