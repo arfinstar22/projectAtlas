@@ -146,18 +146,6 @@ export class AtlasServer {
       aiService: this.aiService
     });
 
-    // Serve frontend for all non-API routes
-    this.app.get('/*', async (request, reply) => {
-      const publicPath = path.join(__dirname, '../../../apps/web/dist/index.html');
-      
-      try {
-        await fs.access(publicPath);
-        return reply.sendFile('index.html');
-      } catch {
-        return reply.status(404).send({ error: 'Frontend not built' });
-      }
-    });
-
     logger.info('Routes configured');
   }
 

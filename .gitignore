@@ -15,6 +15,9 @@ yarn-error.log*
 data/
 *.db
 *.sqlite
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Build outputs
 dist/

@@ -49,7 +49,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
           folder,
           indexingJobId: jobId
         };
-      } catch (error) {
+      } catch (error: any) {
         reply.status(400);
         return { 
           error: {
@@ -66,7 +66,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
       try {
         await folderService.removeFolder(id);
         return { success: true };
-      } catch (error) {
+      } catch (error: any) {
         reply.status(404);
         return { 
           error: {
@@ -88,7 +88,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
           documentsFound: documents.length,
           indexingJobId: jobId
         };
-      } catch (error) {
+      } catch (error: any) {
         reply.status(404);
         return { 
           error: {
@@ -110,7 +110,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
         limit?: number;
       };
 
-      const documents = db.getDocuments(folderId, status as any);
+      const documents = await db.getDocuments(folderId, status as any);
       
       // Simple pagination
       const startIndex = (page - 1) * limit;
@@ -129,7 +129,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
     fastify.get('/documents/:id', async (request, reply) => {
       const { id } = request.params as { id: string };
       
-      const document = db.getDocument(id);
+      const document = await db.getDocument(id);
       if (!document) {
         reply.status(404);
         return { 
@@ -140,7 +140,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
         };
       }
 
-      const chunks = db.getChunks(id);
+      const chunks = await db.getChunks(id);
       
       return { 
         document,
@@ -155,7 +155,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
       try {
         const jobId = await indexingService.reindexDocument(id);
         return { indexingJobId: jobId };
-      } catch (error) {
+      } catch (error: any) {
         reply.status(404);
         return { 
           error: {
@@ -169,7 +169,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
     fastify.get('/documents/:id/source', async (request, reply) => {
       const { id } = request.params as { id: string };
       
-      const document = db.getDocument(id);
+      const document = await db.getDocument(id);
       if (!document) {
         reply.status(404);
         return { 
@@ -181,7 +181,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
       }
 
       // Validate path access
-      if (!folderService.validateFolderAccess(document.path)) {
+      if (!await folderService.validateFolderAccess(document.path)) {
         reply.status(403);
         return { 
           error: {
@@ -236,7 +236,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
           mode: searchQuery.mode,
           total: results.length
         };
-      } catch (error) {
+      } catch (error: any) {
         reply.status(500);
         return { 
           error: {
@@ -248,7 +248,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
     });
 
     fastify.get('/search/stats', async (request, reply) => {
-      return searchService.getSearchStats();
+      return await searchService.getSearchStats();
     });
   }, { prefix: '/api' });
 
@@ -295,7 +295,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
     });
 
     fastify.get('/indexing/stats', async (request, reply) => {
-      return indexingService.getIndexingStats();
+      return await indexingService.getIndexingStats();
     });
   }, { prefix: '/api' });
 
@@ -322,7 +322,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
         });
         
         return response;
-      } catch (error) {
+      } catch (error: any) {
         reply.status(500);
         return {
           error: {
@@ -346,7 +346,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
       try {
         const testResult = await aiService.testConnection();
         return testResult;
-      } catch (error) {
+      } catch (error: any) {
         return {
           success: false,
           error: error.message
@@ -358,9 +358,9 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
   // Statistics and system info
   await app.register(async (fastify) => {
     fastify.get('/stats', async (request, reply) => {
-      const dbStats = db.getStats();
-      const searchStats = searchService.getSearchStats();
-      const indexingStats = indexingService.getIndexingStats();
+      const dbStats = await db.getStats();
+      const searchStats = await searchService.getSearchStats();
+      const indexingStats = await indexingService.getIndexingStats();
 
       return {
         database: dbStats,

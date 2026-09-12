@@ -68,7 +68,7 @@ export class SearchService {
   }
 
   private async keywordSearch(query: SearchQuery): Promise<SearchResult[]> {
-    const chunks = this.db.searchChunks(query.query, query.limit || 20);
+    const chunks = await this.db.searchChunks(query.query, query.limit || 20);
     return this.processChunksToResults(chunks, query.query);
   }
 
@@ -145,7 +145,7 @@ export class SearchService {
     logger.info(`Enhanced retrieval found ${sortedCandidates.length} candidates for query: "${analysis.originalQuery}"`);
 
     // 5. Apply context assembly strategy
-    const selectedChunks = this.applyContextAssemblyStrategy(sortedCandidates, analysis, maxChunks);
+    const selectedChunks = await this.applyContextAssemblyStrategy(sortedCandidates, analysis, maxChunks);
 
     logger.info(`Selected ${selectedChunks.length} chunks after context assembly`);
     
@@ -222,11 +222,11 @@ export class SearchService {
     return score;
   }
 
-  private applyContextAssemblyStrategy(
+  private async applyContextAssemblyStrategy(
     candidates: Array<{chunk: DocumentChunk, score: number, reasons: string[]}>, 
     analysis: QueryAnalysis, 
     maxChunks: number
-  ): DocumentChunk[] {
+  ): Promise<DocumentChunk[]> {
     const strategy = this.queryAnalyzer.getRetrievalStrategy(analysis);
     const selectedChunks: DocumentChunk[] = [];
     const usedDocuments = new Set<string>();
@@ -337,10 +337,10 @@ export class SearchService {
     return selectedChunks;
   }
 
-  private selectAdjacentContextChunks(
+  private async selectAdjacentContextChunks(
     candidates: Array<{chunk: DocumentChunk, score: number, reasons: string[]}>, 
     maxChunks: number
-  ): DocumentChunk[] {
+  ): Promise<DocumentChunk[]> {
     const selectedChunks: DocumentChunk[] = [];
     const processed = new Set<string>();
     
@@ -349,7 +349,7 @@ export class SearchService {
       if (processed.has(candidate.chunk.id)) continue;
       
       // Get adjacent chunks for context
-      const adjacentChunks = this.getAdjacentChunks(candidate.chunk, 1);
+      const adjacentChunks = await this.getAdjacentChunks(candidate.chunk, 1);
       
       // Add the main chunk first
       selectedChunks.push(candidate.chunk);
@@ -376,8 +376,8 @@ export class SearchService {
     return selectedChunks;
   }
 
-  private getAdjacentChunks(chunk: DocumentChunk, radius: number = 1): DocumentChunk[] {
-    const allChunks = this.db.getChunks(chunk.documentId);
+  private async getAdjacentChunks(chunk: DocumentChunk, radius: number = 1): Promise<DocumentChunk[]> {
+    const allChunks = await this.db.getChunks(chunk.documentId);
     const adjacent: DocumentChunk[] = [];
     
     for (let i = -radius; i <= radius; i++) {
@@ -422,11 +422,11 @@ export class SearchService {
     return indices;
   }
 
-  private processChunksToResults(chunks: DocumentChunk[], query: string): SearchResult[] {
+  private async processChunksToResults(chunks: DocumentChunk[], query: string): Promise<SearchResult[]> {
     const results: SearchResult[] = [];
 
     for (const chunk of chunks) {
-      const document = this.db.getDocument(chunk.documentId);
+      const document = await this.db.getDocument(chunk.documentId);
       if (!document) continue;
 
       // Apply filters if specified
@@ -483,12 +483,12 @@ export class SearchService {
   }
 
   async findSimilarDocuments(documentId: string, limit: number = 5): Promise<SearchResult[]> {
-    const document = this.db.getDocument(documentId);
+    const document = await this.db.getDocument(documentId);
     if (!document) {
       throw new Error('Document not found');
     }
 
-    const chunks = this.db.getChunks(documentId);
+    const chunks = await this.db.getChunks(documentId);
     if (chunks.length === 0) {
       return [];
     }
@@ -515,12 +515,12 @@ export class SearchService {
     chunks: DocumentChunk[];
     selectedChunk?: DocumentChunk;
   }> {
-    const document = this.db.getDocument(documentId);
+    const document = await this.db.getDocument(documentId);
     if (!document) {
       throw new Error('Document not found');
     }
 
-    const chunks = this.db.getChunks(documentId);
+    const chunks = await this.db.getChunks(documentId);
     const selectedChunk = chunkId 
       ? chunks.find(c => c.id === chunkId)
       : undefined;
@@ -539,12 +539,12 @@ export class SearchService {
   }
 
   async getPopularDocuments(limit: number = 10): Promise<Document[]> {
-    // For MVP, return most recently indexed documents
-    return this.db.getDocuments().slice(0, limit);
+    const allDocs = await this.db.getDocuments();
+    return allDocs.slice(0, limit);
   }
 
-  getSearchStats() {
-    const stats = this.db.getStats();
+  async getSearchStats() {
+    const stats = await this.db.getStats();
     
     return {
       totalDocuments: stats.documents,
@@ -583,11 +583,11 @@ export class SearchService {
 
       const results = await this.search(searchQuery);
       
-      return results.map(result => {
-        const chunk = this.db.getChunks(result.documentId)
-          .find(c => c.id === result.chunkId);
+      return (await Promise.all(results.map(async result => {
+        const chunks = await this.db.getChunks(result.documentId);
+        const chunk = chunks.find(c => c.id === result.chunkId);
         return chunk!;
-      }).filter(Boolean);
+      }))).filter(Boolean);
     }
   }
 }

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@atlas/core": "*",
     "pdf-parse": "^1.1.1",
     "mammoth": "^1.6.0",
     "csv-parse": "^5.5.0",

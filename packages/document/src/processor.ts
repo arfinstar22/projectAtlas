@@ -148,7 +148,7 @@ export class DocumentProcessor {
 
       // Convert CSV data to searchable text
       const headers = Object.keys(records[0] || {});
-      const text = records.map(record => 
+      const text = records.map((record: Record<string, string>) => 
         headers.map(header => `${header}: ${record[header]}`).join(' | ')
       ).join('\n');
 

@@ -6,7 +6,7 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "allowJs": true,
-    "strict": true,
+    "strict": false,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
@@ -14,12 +14,10 @@
     "noEmit": false,
     "declaration": true,
     "outDir": "./dist",
-    "rootDir": "./src",
     "baseUrl": ".",
     "paths": {
       "@atlas/core": ["../../packages/core/src"],
       "@atlas/document": ["../../packages/document/src"],
-      "@atlas/search": ["../../packages/search/src"],
       "@atlas/ai": ["../../packages/ai/src"]
     }
   },

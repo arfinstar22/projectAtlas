@@ -1,159 +1,129 @@
-# ATLAS - Hybrid Local Document Intelligence
+# ATLAS — Document Intelligence untuk File Lokal Anda
 
-**Jangan cari file. Cari jawabannya.**
-
-ATLAS adalah aplikasi document intelligence yang memungkinkan Anda mencari dan memahami kumpulan dokumen lokal menggunakan bahasa natural. File tetap berada di komputer Anda - ATLAS yang datang ke file, bukan sebaliknya.
-
-## ✨ Fitur Utama
-
-- 🔒 **Local-First**: File asli tetap di komputer Anda
-- 🧠 **Hybrid AI**: Gunakan cloud AI atau local AI sesuai kebutuhan
-- 🔍 **Smart Search**: Cari dengan kata kunci atau tanyakan langsung
-- 📝 **Source-Grounded**: Setiap jawaban dilengkapi sumber yang jelas
-- 🎯 **Multi-Format**: PDF, DOCX, TXT, Markdown, CSV, dan gambar
-- 💰 **Cost-Effective**: Dapat digunakan dengan free-tier AI providers
+**Cari jawaban, bukan file.** ATLAS adalah aplikasi desktop yang memungkinkan Anda menanyakan isi dokumen dalam bahasa natural — tanpa perlu membuka file satu per satu. File tetap aman di komputer Anda.
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### Persyaratan
 
-- Node.js 18+ 
-- npm atau yarn
+- **Node.js 18+** — [Download](https://nodejs.org/)
+- **npm 9+** (sudah termasuk Node.js)
 
-### Installation
+### Instalasi (3 langkah)
 
 ```bash
-git clone <repository>
-cd atlas
+# 1. Clone repository
+git clone https://github.com/arfinstar22/projectAtlas.git
+cd projectAtlas
+
+# 2. Install semua dependensi
 npm install
-```
 
-### Configuration
-
-1. Copy environment file:
-```bash
+# 3. Buat konfigurasi lingkungan
 cp .env.example .env
 ```
 
-2. Konfigurasi AI Provider (opsional):
-```env
-OPENROUTER_API_KEY=your_key_here
-AI_MODEL=openai/gpt-3.5-turbo
-EMBEDDING_MODEL=openai/text-embedding-ada-002
-```
-
-### Running
+### Menjalankan ATLAS
 
 ```bash
 npm run dev
 ```
 
-Buka browser di `http://localhost:3000`
+Ini akan menjalankan dua server secara bersamaan:
 
-## 📚 Cara Menggunakan
+| Server | Port | URL |
+|--------|------|-----|
+| Backend API | `3000` | http://localhost:3000/api/health |
+| Frontend Web | `5173` | http://localhost:5173 |
 
-1. **Tambah Folder**: Pilih folder yang berisi dokumen Anda
-2. **Indexing**: ATLAS akan memproses dan mengindex dokumen
-3. **Cari atau Tanya**: Gunakan search bar untuk mencari file atau bertanya
-4. **Buka Sumber**: Klik sumber untuk membuka file asli
+Buka **http://localhost:5173** untuk menggunakan ATLAS.
 
-### Contoh Pertanyaan
+### Konfigurasi AI (opsional — untuk fitur Chat)
 
-- "Berapa total anggaran kegiatan tahun 2025?"
-- "Bandingkan laporan 2024 dan 2025"
-- "Apa saja persyaratan dalam SOP kepegawaian?"
-
-## 🏗️ Arsitektur
+Buka file `.env` dan isi API key dari [OpenRouter](https://openrouter.ai/keys):
 
 ```
-Browser ↔ ATLAS Web App ↔ Local Backend ↔ Document Engine ↔ Local Files
-                     ↓
-              AI Provider (hanya konteks relevan)
+OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-**Privacy-First**: Hanya konteks relevan yang dikirim ke AI provider, bukan seluruh file.
-
-## 🔧 Development
-
-### Project Structure
-
-```
-atlas/
-├── apps/
-│   ├── web/          # React frontend
-│   └── server/       # Node.js backend
-├── packages/
-│   ├── core/         # Shared types & utilities
-│   ├── document/     # Document processing
-│   ├── search/       # Search & indexing
-│   └── ai/           # AI provider abstraction
-```
-
-### Available Commands
-
-```bash
-npm run dev          # Start development servers
-npm run build        # Build for production
-npm run lint         # Run linter
-npm run typecheck    # Run TypeScript checks
-```
-
-## 🔐 Security & Privacy
-
-- File asli **tidak pernah** dikirim ke cloud
-- Hanya folder yang Anda izinkan yang dapat diakses
-- API key disimpan lokal dan tidak di-commit ke repository
-- Path traversal protection
-- File type validation
-
-## 🤖 Supported AI Providers
-
-- **OpenRouter**: Multi-model access dengan satu API
-- **Local AI**: Support untuk Ollama dan model lokal (coming soon)
-
-## 📄 Supported File Types
-
-**Dokumen**
-- PDF
-- DOCX  
-- TXT
-- Markdown
-
-**Spreadsheet**
-- XLSX
-- CSV
-
-**Image** (dengan OCR)
-- JPG, JPEG, PNG, WEBP
-
-## 🐛 Troubleshooting
-
-### API Key Issues
-Pastikan API key disimpan di file `.env` dan memiliki format yang benar.
-
-### File Access Issues
-ATLAS hanya dapat mengakses folder yang telah Anda berikan izin melalui UI.
-
-### Performance Issues
-Untuk folder besar (>1000 files), indexing berjalan di background. Anda tetap dapat menggunakan aplikasi selama proses ini.
-
-## 🛣️ Roadmap
-
-- [ ] OCR untuk gambar dan scanned PDF
-- [ ] Multi-document comparison
-- [ ] Document summarization
-- [ ] Local LLM integration (Ollama)
-- [ ] File watcher untuk auto-indexing
-- [ ] Advanced query capabilities
-
-## 🤝 Contributing
-
-Kontribusi sangat diterima! Silakan buat issue atau pull request.
-
-## 📝 License
-
-MIT License - lihat [LICENSE](LICENSE) untuk detail.
+Tanpa API key, fitur pencarian dokumen dan folder tetap berfungsi penuh. Hanya fitur **Tanya ATLAS** (chat AI) yang membutuhkan konfigurasi ini.
 
 ---
 
-**ATLAS** - Lapisan kecerdasan untuk dokumen lokal Anda.
+## 📚 Cara Menggunakan
+
+1. **Tambah Folder Dokumen** — Klik "Tambah Folder" dan pilih folder yang berisi file PDF, DOCX, TXT, atau Markdown.
+2. **Tunggu Indexing** — ATLAS akan memproses dokumen Anda. Proses berjalan di latar belakang.
+3. **Cari File** — Gunakan halaman **Pencarian** untuk mencari file berdasarkan kata kunci.
+4. **Tanya ATLAS** — Gunakan halaman **Tanya ATLAS** untuk bertanya dalam bahasa natural:
+   - _"Berapa total anggaran kegiatan tahun 2025?"_
+   - _"Apa kesimpulan dari skripsi ini?"_
+   - _"Bandingkan laporan 2024 dan 2025"_
+   - _"Jam berapa pegawai mulai bekerja?"_
+
+## 🔒 Privasi & Keamanan
+
+- File asli **tidak pernah dikirim ke server cloud manapun**
+- Hanya potongan teks relevan yang dikirim ke AI provider untuk menjawab pertanyaan
+- API key disimpan secara lokal di file `.env` dan tidak pernah di-commit ke repository
+- ATLAS hanya dapat mengakses folder yang Anda izinkan secara eksplisit
+- Path traversal protection mencegah akses ke folder yang tidak diizinkan
+
+## ⚙️ Konfigurasi
+
+Semua konfigurasi dilakukan melalui file `.env`:
+
+```env
+# Wajib untuk fitur AI Chat
+OPENROUTER_API_KEY=sk-or-v1-...
+
+# Opsional — default sudah baik untuk sebagian besar kasus
+PORT=3000
+AI_MODEL=openai/gpt-4o-mini
+CHUNK_SIZE=1000
+CHUNK_OVERLAP=200
+```
+
+## 🏗️ Struktur Project
+
+```
+projectAtlas/
+├── apps/
+│   ├── web/              # Frontend React + Vite + Tailwind
+│   └── server/           # Backend Node.js + Fastify + SQLite
+├── packages/
+│   ├── core/             # Type definitions & utilities
+│   ├── document/         # Document processing (PDF, DOCX, TXT)
+│   └── ai/               # AI provider abstraction
+├── simple-atlas/         # Versi standalone (JS murni) — port 3001
+└── scripts/              # Test scripts
+```
+
+## 🐛 Troubleshooting
+
+| Masalah | Solusi |
+|---------|--------|
+| `EADDRINUSE` (port bentrok) | Ubah `PORT=3000` di `.env` ke port lain, lalu update `apps/web/vite.config.ts` proxy target |
+| API key error | Pastikan `OPENROUTER_API_KEY` diisi dengan key dari [OpenRouter](https://openrouter.ai/keys) |
+| Search tidak menemukan file | Pastikan folder sudah ditambahkan dan proses indexing selesai |
+| Build gagal | Pastikan Node.js versi 18+ dan jalankan `npm install` ulang |
+
+## 🧪 Testing
+
+```bash
+node scripts/test-comprehensive-rag.mjs
+node scripts/test-professor-level-intelligence.mjs
+```
+
+Pastikan server ATLAS berjalan terlebih dahulu (`npm run dev`).
+
+## 📄 Format File yang Didukung
+
+- PDF
+- DOCX
+- TXT
+- Markdown (.md)
+
+## 📝 Lisensi
+
+MIT

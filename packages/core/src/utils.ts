@@ -11,7 +11,7 @@ export function generateHash(content: Buffer | string): string {
 }
 
 export function sanitizePath(filePath: string): string {
-  return path.normalize(filePath).replace(/^(\.\.[\/\\])+/, '');
+  return path.normalize(filePath).replace(/^(\.\.[/\\])+/, '');
 }
 
 export function isPathSafe(filePath: string, allowedPaths: string[]): boolean {

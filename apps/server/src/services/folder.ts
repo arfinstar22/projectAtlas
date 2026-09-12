@@ -268,19 +268,17 @@ export class FolderService {
   }
 
   private handleFileDelete(filePath: string): void {
-    const document = this.db.getDocumentByPath(filePath);
-    if (document) {
-      // Remove document and its chunks
-      this.db.deleteDocumentChunks(document.id);
-      // Mark document as deleted or remove it entirely
-      // For now, we'll keep the record but update status
-      this.db.updateDocumentStatus(document.id, DocumentStatus.ERROR);
-      logger.info(`File deleted: ${filePath}`);
-    }
+    this.db.getDocumentByPath(filePath).then(document => {
+      if (document) {
+        this.db.deleteDocumentChunks(document.id);
+        this.db.updateDocumentStatus(document.id, DocumentStatus.ERROR);
+        logger.info(`File deleted: ${filePath}`);
+      }
+    });
   }
 
-  validateFolderAccess(filePath: string): boolean {
-    const folders = this.db.getFolders();
+  async validateFolderAccess(filePath: string): Promise<boolean> {
+    const folders = await this.db.getFolders();
     const allowedPaths = folders.map(f => f.path);
     return isPathSafe(filePath, allowedPaths);
   }

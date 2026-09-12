@@ -8,7 +8,8 @@ import {
   TrendingUp,
   Clock,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  MessageSquare
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { api } from '../services/api';

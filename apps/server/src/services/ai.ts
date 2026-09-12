@@ -82,7 +82,7 @@ export class AIService {
       }
 
       // Prepare enhanced context for AI
-      const assembledContext = this.assembleIntelligentContext(relevantChunks, queryAnalysis);
+      const assembledContext = await this.assembleIntelligentContext(relevantChunks, queryAnalysis);
 
       // Create enhanced system prompt based on query intent
       const systemPrompt = this.createEnhancedSystemPrompt(queryAnalysis);
@@ -101,7 +101,7 @@ export class AIService {
       const aiResponse = await this.provider.generateResponse(messages, aiOptions);
 
       // Prepare enhanced sources with better metadata
-      const sources = this.prepareSources(relevantChunks, queryAnalysis);
+      const sources = await this.prepareSources(relevantChunks, queryAnalysis);
 
       const response: ChatResponse = {
         response: aiResponse.content,
@@ -355,11 +355,11 @@ Jawab pertanyaan berdasarkan konteks di atas. Pahami makna dan hubungan antar in
   }
 
   // Assemble context intelligently based on query analysis
-  private assembleIntelligentContext(chunks: any[], queryAnalysis: any): Array<{text: string, source: string, documentName: string, section?: string}> {
+  private async assembleIntelligentContext(chunks: any[], queryAnalysis: any): Promise<Array<{text: string, source: string, documentName: string, section?: string}>> {
     const assembledContext: Array<{text: string, source: string, documentName: string, section?: string}> = [];
 
     for (const chunk of chunks) {
-      const document = this.searchService.db.getDocument(chunk.documentId);
+      const document = await this.searchService.db.getDocument(chunk.documentId);
       if (!document) continue;
 
       // Enhance chunk text with adjacent context if beneficial
@@ -367,7 +367,7 @@ Jawab pertanyaan berdasarkan konteks di atas. Pahami makna dan hubungan antar in
       
       if (queryAnalysis.needsMultipleChunks && chunk.text.length < 500) {
         // Try to get adjacent chunks for better context
-        const adjacentChunks = this.getAdjacentChunks(chunk);
+        const adjacentChunks = await this.getAdjacentChunks(chunk);
         if (adjacentChunks.length > 0) {
           const combinedText = adjacentChunks.map(c => c.text).join(' ');
           if (combinedText.length < 1000) { // Don't make it too long
@@ -388,8 +388,8 @@ Jawab pertanyaan berdasarkan konteks di atas. Pahami makna dan hubungan antar in
   }
 
   // Get adjacent chunks for better context
-  private getAdjacentChunks(chunk: any, radius: number = 1): any[] {
-    const allChunks = this.searchService.db.getChunks(chunk.documentId);
+  private async getAdjacentChunks(chunk: any, radius: number = 1): Promise<any[]> {
+    const allChunks = await this.searchService.db.getChunks(chunk.documentId);
     const adjacent: any[] = [chunk]; // Include the original chunk
     
     for (let i = -radius; i <= radius; i++) {
@@ -452,15 +452,15 @@ Jawab pertanyaan berdasarkan konteks di atas. Pahami makna dan hubungan antar in
   }
 
   // Prepare enhanced sources with better metadata
-  private prepareSources(chunks: any[], queryAnalysis: any): Array<{
+  private async prepareSources(chunks: any[], queryAnalysis: any): Promise<Array<{
     documentId: string;
     documentName: string;
     chunkId: string;
     page?: number;
     snippet: string;
-  }> {
-    return chunks.map(chunk => {
-      const document = this.searchService.db.getDocument(chunk.documentId);
+  }>> {
+    return (await Promise.all(chunks.map(async chunk => {
+      const document = await this.searchService.db.getDocument(chunk.documentId);
       if (!document) return null;
 
       // Create intelligent snippet based on query intent
@@ -493,7 +493,7 @@ Jawab pertanyaan berdasarkan konteks di atas. Pahami makna dan hubungan antar in
         page: chunk.metadata?.page,
         snippet
       };
-    }).filter(Boolean);
+    }))).filter(Boolean);
   }
 
   private createContextPrompt(context: Array<{ text: string; source: string }>, question: string): string {

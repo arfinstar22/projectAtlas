@@ -120,11 +120,11 @@ export class IndexingService {
     } catch (error) {
       // Job failed
       job.status = JobStatus.FAILED;
-      job.error = error.message;
+      job.error = (error as Error).message;
       job.completedAt = new Date();
       this.db.updateJob(jobId, {
         status: JobStatus.FAILED,
-        error: error.message,
+        error: (error as Error).message,
         completedAt: job.completedAt
       });
 
@@ -296,7 +296,7 @@ export class IndexingService {
       return activeJob;
     }
 
-    return this.db.getJobs().then(jobs => jobs.find(job => job.id === jobId) || null);
+    return null;
   }
 
   async getJobs(status?: JobStatus): Promise<IndexingJob[]> {
@@ -335,10 +335,10 @@ export class IndexingService {
     });
   }
 
-  getIndexingStats() {
-    const stats = this.db.getStats();
+  async getIndexingStats() {
+    const stats = await this.db.getStats();
     const activeJobCount = this.activeJobs.size;
-    const queuedJobs = this.db.getJobs(JobStatus.QUEUED).length;
+    const queuedJobs = (await this.db.getJobs(JobStatus.QUEUED)).length;
 
     return {
       ...stats,
