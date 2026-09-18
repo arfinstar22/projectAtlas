@@ -74,28 +74,24 @@ export function HomePage() {
           value={stats?.database?.folders || 0}
           icon={FolderOpen}
           iconColor="primary"
-          trend="+2 minggu ini"
         />
         <StatCard
           title="Total Dokumen"
           value={stats?.database?.documents || 0}
           icon={FileText}
           iconColor="success"
-          trend="+5 hari ini"
         />
         <StatCard
           title="Terindeks"
           value={stats?.database?.indexed || 0}
           icon={CheckCircle2}
           iconColor="info"
-          trend={stats?.database?.indexed === stats?.database?.documents ? '100%' : 'Sedang proses'}
         />
         <StatCard
           title="Chunk Tersedia"
           value={stats?.database?.chunks || 0}
           icon={Search}
           iconColor="warning"
-          trend="Siap dicari"
         />
       </div>
 
@@ -228,12 +224,11 @@ export function HomePage() {
   );
 }
 
-function StatCard({ title, value, icon: Icon, iconColor, trend }: {
+function StatCard({ title, value, icon: Icon, iconColor }: {
   title: string;
   value: number;
   icon: any;
   iconColor: 'primary' | 'success' | 'info' | 'warning';
-  trend: string;
 }) {
   const iconColorClasses = {
     primary: 'bg-primary-500/20 text-primary-400 border border-primary-500/30',
@@ -241,10 +236,6 @@ function StatCard({ title, value, icon: Icon, iconColor, trend }: {
     info: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
     warning: 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30',
   };
-
-  const trendColor = trend === '100%' || trend.includes('+') 
-    ? 'text-green-400' 
-    : 'text-text-muted';
 
   return (
     <div className={cn(cardVariants.default, 'p-6')}>
@@ -254,7 +245,6 @@ function StatCard({ title, value, icon: Icon, iconColor, trend }: {
           <p className="text-2xl font-bold text-surface-100 mt-1">
             {value.toLocaleString('id-ID')}
           </p>
-          <p className={cn('text-xs mt-1', trendColor)}>{trend}</p>
         </div>
         <div className={cn('p-3 rounded-lg border', iconColorClasses[iconColor])}>
           <Icon className="w-6 h-6" />

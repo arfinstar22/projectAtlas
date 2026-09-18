@@ -11,6 +11,8 @@ import {
   quickIndexPriority,
   generateId, 
   chunkText, 
+  chunkTextSemantically,
+  ChunkMetadata,
   AsyncQueue, 
   createLogger 
 } from '@atlas/core';
@@ -410,72 +412,49 @@ export class IndexingService {
   }
 
   private async createChunks(documentId: string, text: string): Promise<DocumentChunk[]> {
-    const chunks: DocumentChunk[] = [];
-    
-    // Try semantic chunking first, fall back to simple chunking if it fails
-    let semanticChunks;
+    // Semantic chunking preserves document structure (headings, paragraphs);
+    // fall back to fixed-size windows if it fails.
     try {
-      // Import the enhanced chunking function
-      const coreModule = await import('@atlas/core');
-      const { chunkTextSemantically } = coreModule as any;
-      
-      if (chunkTextSemantically) {
-        semanticChunks = chunkTextSemantically(text, this.options.chunkSize, this.options.chunkOverlap);
-      } else {
-        throw new Error('chunkTextSemantically not available');
-      }
-    } catch (error) {
-      logger.warn('Semantic chunking failed, falling back to simple chunking:', error);
-      // Fallback to simple chunking
-      const textChunks = chunkText(text, this.options.chunkSize, this.options.chunkOverlap);
-      let startOffset = 0;
-
-      textChunks.forEach((chunkText, index) => {
-        const endOffset = startOffset + chunkText.length;
-
-        const chunk: DocumentChunk = {
-          id: generateId(),
-          documentId,
-          chunkIndex: index,
-          text: chunkText,
-          metadata: {
-            startOffset,
-            endOffset
-          },
-          createdAt: new Date()
-        };
-
-        chunks.push(chunk);
-        startOffset = endOffset - this.options.chunkOverlap;
-      });
-
-      return chunks;
-    }
-
-    // Process semantic chunks
-    semanticChunks.forEach((semanticChunk: any, index: number) => {
-      const chunk: DocumentChunk = {
-        id: generateId(),
-        documentId,
-        chunkIndex: index,
-        text: semanticChunk.text,
-        metadata: {
+      const chunks = chunkTextSemantically(text, this.options.chunkSize, this.options.chunkOverlap)
+        .map((semanticChunk, index) => this.buildChunk(documentId, index, semanticChunk.text, {
           startOffset: semanticChunk.metadata.startOffset,
           endOffset: semanticChunk.metadata.endOffset,
-          section: semanticChunk.metadata.headingText,
-          // Store additional semantic metadata as extended properties
-          ...(semanticChunk.metadata.hasHeading && { hasHeading: semanticChunk.metadata.hasHeading }),
-          ...(semanticChunk.metadata.sentenceCount && { sentenceCount: semanticChunk.metadata.sentenceCount }),
-          ...(semanticChunk.metadata.paragraphIndex && { paragraphIndex: semanticChunk.metadata.paragraphIndex })
-        },
-        createdAt: new Date()
-      };
+          section: semanticChunk.metadata.headingText
+        }));
 
-      chunks.push(chunk);
+      logger.info(`Created ${chunks.length} semantic chunks for document ${documentId}`);
+      return chunks;
+    } catch (error) {
+      logger.warn('Semantic chunking failed, falling back to simple chunking:', error);
+      return this.createSimpleChunks(documentId, text);
+    }
+  }
+
+  // Fallback: fixed-size windows with overlap (no structure awareness).
+  private createSimpleChunks(documentId: string, text: string): DocumentChunk[] {
+    const chunks: DocumentChunk[] = [];
+    const textChunks = chunkText(text, this.options.chunkSize, this.options.chunkOverlap);
+    let startOffset = 0;
+
+    textChunks.forEach((chunkTextValue, index) => {
+      const endOffset = startOffset + chunkTextValue.length;
+      chunks.push(this.buildChunk(documentId, index, chunkTextValue, { startOffset, endOffset }));
+      startOffset = endOffset - this.options.chunkOverlap;
     });
 
-    logger.info(`Created ${chunks.length} semantic chunks for document ${documentId}`);
+    logger.info(`Created ${chunks.length} simple chunks for document ${documentId}`);
     return chunks;
+  }
+
+  private buildChunk(documentId: string, index: number, text: string, metadata: ChunkMetadata): DocumentChunk {
+    return {
+      id: generateId(),
+      documentId,
+      chunkIndex: index,
+      text,
+      metadata,
+      createdAt: new Date()
+    };
   }
 
   async reindexDocument(documentId: string): Promise<string> {

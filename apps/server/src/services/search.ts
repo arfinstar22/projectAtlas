@@ -451,8 +451,11 @@ export class SearchService {
   private async processChunksToResults(chunks: DocumentChunk[], query: string): Promise<SearchResult[]> {
     const results: SearchResult[] = [];
 
+    // Single batched fetch instead of one query per chunk (N+1 elimination).
+    const docMap = await this.db.getDocumentsByIds(chunks.map(c => c.documentId));
+
     for (const chunk of chunks) {
-      const document = await this.db.getDocument(chunk.documentId);
+      const document = docMap.get(chunk.documentId);
       if (!document) continue;
 
       // Apply filters if specified

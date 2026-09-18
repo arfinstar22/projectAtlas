@@ -80,6 +80,13 @@ export function DocumentsPage() {
     progress: null,
     isPolling: false
   });
+  // Guards the quick-index polling loop: stops on unmount so the async loop
+  // cannot keep polling (or toast) against a dead component.
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   const { data: folders } = useQuery('folders', api.getFolders);
   const { data: stats } = useQuery('indexing-stats', api.getIndexingStats);
@@ -114,8 +121,8 @@ export function DocumentsPage() {
       
       toast.loading('Memulai proses index cepat...', { id: 'quick-index-toast' });
       
-      // Start polling for progress
-      while (quickIndexStateRef.current.isPolling) {
+      // Start polling for progress (stops on completion OR unmount)
+      while (quickIndexStateRef.current.isPolling && isMountedRef.current) {
         try {
           const progressData = await api.getQuickIndexProgress(folderId);
           const progress = progressData.progress;
@@ -125,12 +132,16 @@ export function DocumentsPage() {
             
             if (progress.status === 'completed') {
               quickIndexStateRef.current.isPolling = false;
-              toast.success(`Index cepat selesai: ${progress.indexed} dokumen diproses, ${progress.bytesProcessed} bytes`, { id: 'quick-index-toast' });
+              if (isMountedRef.current) {
+                toast.success(`Index cepat selesai: ${progress.indexed} dokumen diproses, ${progress.bytesProcessed} bytes`, { id: 'quick-index-toast' });
+              }
               queryClient.invalidateQueries('indexing-stats');
               break;
             } else if (progress.status === 'failed') {
               quickIndexStateRef.current.isPolling = false;
-              toast.error(`Index cepat gagal: ${progress.error}`, { id: 'quick-index-toast' });
+              if (isMountedRef.current) {
+                toast.error(`Index cepat gagal: ${progress.error}`, { id: 'quick-index-toast' });
+              }
               break;
             }
           }

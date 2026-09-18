@@ -265,6 +265,23 @@ export class AtlasDatabase {
     return row ? this.mapDocument(row) : null;
   }
 
+  // Batch fetch for search result assembly. Avoids the N+1 pattern of one
+  // getDocument() query per chunk (20 results used to mean 20 queries).
+  async getDocumentsByIds(ids: string[]): Promise<Map<string, Document>> {
+    const map = new Map<string, Document>();
+    const unique = [...new Set(ids)].filter(Boolean);
+    if (unique.length === 0) return map;
+    const placeholders = unique.map(() => '?').join(',');
+    const rows = await this.db.all(
+      `SELECT * FROM documents WHERE id IN (${placeholders})`,
+      unique
+    );
+    for (const row of rows) {
+      map.set(row.id, this.mapDocument(row));
+    }
+    return map;
+  }
+
   async getDocuments(folderId?: string, status?: DocumentStatus): Promise<Document[]> {
     let query = 'SELECT * FROM documents';
     const params: any[] = [];
