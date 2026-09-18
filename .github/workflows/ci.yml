@@ -25,16 +25,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Build first (workspace dependency order: core -> ai/document ->
+      # server/web). Typecheck resolves @atlas/* through each package's
+      # dist/*.d.ts, so it must run AFTER the packages are built — on a fresh
+      # checkout there is no dist/ and typecheck-before-build fails (TS2307).
+      - name: Build
+        run: npm run build
+
       - name: Lint
         run: npm run lint
 
       - name: Typecheck
         run: npm run typecheck
-
-      # Build in workspace dependency order (core -> ai/document -> server/web)
-      # so @atlas/* packages ship valid dist/ artifacts.
-      - name: Build
-        run: npm run build
 
   e2e:
     name: E2E smoke (mock AI provider)
