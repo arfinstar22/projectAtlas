@@ -9,8 +9,29 @@
  * Usage: BASE=http://localhost:3000/api node scripts/e2e-smoke.mjs
  */
 
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+
 const BASE = process.env.BASE || 'http://localhost:3000/api';
 const TEST_DIR = process.env.TEST_DIR || '/tmp/atlas-e2e';
+
+// Fixture dokumen uji — dibuat ulang otomatis agar script self-contained
+// (juga dipakai runner CI tanpa persiapan manual).
+async function ensureFixtures() {
+  await fs.mkdir(TEST_DIR, { recursive: true });
+  await fs.mkdir(path.join(TEST_DIR, 'sub'), { recursive: true });
+  const fixtures = [
+    ['laporan-keuangan-q3.txt',
+      'Laporan Keuangan Q3 2026\n\nTotal anggaran triwulan ini adalah Rp 4,5 miliar, naik 12% dari triwulan sebelumnya. Belanja infrastruktur menyerap 40% dari total anggaran.\n'],
+    ['panduan-cuti.txt',
+      'Panduan Cuti Karyawan\n\nSetiap karyawan berhak atas cuti tahunan selama 12 hari kerja. Pengajuan cuti harus disetujui atasan langsung paling lambat tujuh hari sebelum tanggal mulai. Cuti sakit memerlukan surat keterangan dokter bila melebihi dua hari berturut-turut.\n'],
+    ['sub/rencana-kerja.txt',
+      'Rencana Kerja Teknis\n\nMigrasi database ke versi baru dijadwalkan pada bulan depan. Tim infrastruktur akan melakukan backup penuh sebelum migrasi dan verifikasi integritas data sesudahnya.\n']
+  ];
+  for (const [name, content] of fixtures) {
+    await fs.writeFile(path.join(TEST_DIR, name), content);
+  }
+}
 
 const results = [];
 const ok = (name, cond, detail = '') => {
@@ -37,6 +58,8 @@ async function req(method, path, body, timeoutMs = 25000) {
 }
 
 async function main() {
+  await ensureFixtures();
+
   // ===== 0. Health (Header app) =====
   const health = await req('GET', '/health');
   ok('health: server hidup', health.status === 200 && health.data?.status === 'ok');
@@ -146,13 +169,16 @@ async function main() {
   // Pertahankan model aktif — smoke test tidak boleh mengubah konfigurasi AI.
   const currentCfg = await req('GET', '/ai/status');
   const activeModel = currentCfg.data?.model || undefined;
+  const hasKeyBefore = currentCfg.data?.hasApiKey === true;
   const cfg = await req('POST', '/ai/config', { apiKey: '••••••••••••••••', ...(activeModel ? { model: activeModel } : {}) });
   ok('ai/config simpan (masked key diabaikan)', cfg.status === 200 && cfg.data?.success === true
-    && cfg.data?.hasApiKey === true && (!activeModel || cfg.data?.model === activeModel));
+    && cfg.data?.hasApiKey === hasKeyBefore && (!activeModel || cfg.data?.model === activeModel),
+    hasKeyBefore ? 'key aktif dipertahankan' : 'tanpa key — masked key benar diabaikan (CI)');
 
   const test = await req('POST', '/ai/test', {}, 40000);
-  ok('ai/test koneksi', test.data?.success === true,
-    `${test.data?.chatModelCount ?? '?'} model chat`);
+  ok('ai/test koneksi', test.status === 200 && (test.data?.success === true
+    || test.data?.code === 'NO_API_KEY'),
+    test.data?.success ? `${test.data?.chatModelCount ?? '?'} model chat` : 'tanpa key — NO_API_KEY (benar untuk CI)');
 
   // ===== 6. Cleanup: hapus folder test + verifikasi allowlist dicabut =====
   if (folderId) {

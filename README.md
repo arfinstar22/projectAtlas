@@ -1,5 +1,7 @@
 # ATLAS
 
+[![CI](https://github.com/arfinstar22/projectAtlas/actions/workflows/ci.yml/badge.svg)](https://github.com/arfinstar22/projectAtlas/actions/workflows/ci.yml)
+
 **Hybrid Local Document Intelligence** — Lapisan kecerdasan untuk dokumen lokal Anda.
 
 ATLAS memungkinkan Anda menanyakan isi dokumen dalam bahasa natural, mencari konten dengan cepat, dan mendapatkan jawaban yang didasarkan pada bukti (citation) — semua tanpa mengirim file ke cloud.
