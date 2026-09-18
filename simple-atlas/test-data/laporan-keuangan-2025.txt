@@ -1,5 +1,0 @@
-Total anggaran operasional tahun 2025 adalah Rp150.000.000.
-Biaya operasional terbesar adalah pemeliharaan sistem sebesar Rp45.000.000.
-Anggaran pengembangan perangkat lunak sebesar Rp30.000.000.
-Anggaran pelatihan SDM dan sertifikasi keamanan informasi ditetapkan sebesar Rp25.000.000.
-Sisa alokasi dana operasional sebesar Rp50.000.000 diperuntukkan bagi cadangan darurat infrastruktur cloud dan lisensi tahunan.

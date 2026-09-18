@@ -62,12 +62,17 @@ Edit file `.env` sesuai kebutuhan:
 
 ```env
 # ─── AI Configuration ─────────────────────────────────────────────
-# Wajib untuk fitur Tanya ATLAS (Chat)
-# Daftar di https://openrouter.ai/keys untuk mendapatkan key gratis
-OPENROUTER_API_KEY=
+# Default: Google AI (Gemini) — chat + embedding (untuk semantic search)
+# Daftar di https://aistudio.google.com/apikey (free tier)
+GOOGLE_API_KEY=
 
-# Model AI yang digunakan (default: openai/gpt-4o-mini)
-AI_MODEL=openai/gpt-4o-mini
+# Model AI (default per provider: gemini-3.6-flash / gemini-embedding-001)
+# AI_MODEL=gemini-3.6-flash
+# EMBEDDING_MODEL=gemini-embedding-001
+
+# Alternatif: OpenRouter (chat saja — katalognya belum punya model embedding)
+# OPENROUTER_API_KEY=
+# AI_PROVIDER=openrouter
 
 # ─── Server Configuration ────────────────────────────────────────
 # Port server backend (default: 3001)
@@ -89,19 +94,15 @@ MAX_FILE_SIZE=52428800
 # Aktifkan OCR untuk gambar/PDF scan (default: false)
 ENABLE_OCR=false
 
-# Jumlah pemrosesan bersamaan (default: 3)
-MAX_CONCURRENT_PROCESSING=3
-
-# ─── AI Provider Configuration ──────────────────────────────────
-AI_PROVIDER=openrouter
-EMBEDDING_MODEL=openai/text-embedding-ada-002
+# Jumlah pemrosesan bersamaan (default: 4)
+MAX_CONCURRENT_PROCESSING=4
 
 # ─── CORS / Security ────────────────────────────────────────────
 ALLOWED_ORIGINS=http://localhost:3001,http://localhost:5173
 NODE_ENV=development
 ```
 
-> **Catatan:** Tanpa `OPENROUTER_API_KEY`, fitur pencarian dokumen dan folder tetap berfungsi penuh. Hanya fitur **Tanya ATLAS** (chat AI) yang membutuhkan konfigurasi ini.
+> **Catatan:** Konfigurasi AI yang disimpan lewat halaman **Settings** (tersimpan di database lokal) mengesampingkan nilai `.env`. Tanpa API key, pencarian **Kata Kunci** dan **Hybrid** tetap berfungsi penuh; mode **Semantik** dan **Tanya ATLAS** membutuhkan key (disarankan Google AI).
 
 ---
 
@@ -119,7 +120,7 @@ NODE_ENV=development
 
 ### 3. Cari Konten (Halaman Pencarian)
 - Gunakan **Kata Kunci** untuk pencarian exact/partial match
-- Gunakan **Semantik** untuk pencarian berbasis makna (coming soon)
+- Gunakan **Semantik** untuk pencarian berbasis makna (embedding vektor Google)
 - Gunakan **Hybrid** untuk kombinasi keduanya
 - Filter berdasarkan ekstensi file atau folder
 
@@ -142,7 +143,7 @@ Setiap jawaban dilengkapi **citation** (sumber dokumen, halaman, snippet) yang d
 |---------|--------------|
 | **Local-First** | File asli tidak pernah dikirim ke server cloud manapun |
 | **Minimal Data Sharing** | Hanya potongan teks (chunk) relevan yang dikirim ke AI provider |
-| **API Key Security** | Disimpan lokal di `.env`, tidak pernah di-commit ke repository |
+| **API Key Security** | Disimpan lokal (database SQLite via Settings atau `.env`), tidak pernah di-commit ke repository |
 | **Folder Access Control** | ATLAS hanya mengakses folder yang Anda izinkan eksplisit |
 | **Path Traversal Protection** | Validasi path mencegah akses ke folder di luar yang diizinkan |
 | **No Telemetry** | Tidak ada tracking, analytics, atau pengumpulan data pengguna |
@@ -169,9 +170,8 @@ projectAtlas/
 ├── packages/
 │   ├── core/             # Type definitions, utilities, logger
 │   ├── document/         # Document processing (PDF, DOCX, TXT, CSV, XLSX, Images)
-│   └── ai/               # AI provider abstraction (OpenRouter + Mock)
-├── simple-atlas/         # Versi standalone (JS murni) — port 3001
-└── scripts/              # Test scripts (RAG, citation grounding, dll)
+│   └── ai/               # AI provider abstraction (Google Gemini + OpenRouter + Mock)
+└── scripts/              # build.mjs + e2e-smoke.mjs (regresi end-to-end)
 ```
 
 ### Teknologi
@@ -180,7 +180,7 @@ projectAtlas/
 |-------|-----------|
 | Frontend | React 18, Vite, Tailwind CSS, React Query, React Router |
 | Backend | Fastify, SQLite (better-sqlite3), FTS5 Full-Text Search |
-| AI | OpenRouter (GPT-4o, Claude, dll), Mock provider untuk development |
+| AI | Google AI (Gemini) untuk chat + embedding, OpenRouter alternatif, Mock untuk development |
 | Document Processing | pdf-parse, mammoth, csv-parse, xlsx, marked |
 | File Watching | chokidar (auto-scan on file changes) |
 
@@ -189,14 +189,8 @@ projectAtlas/
 ## 🧪 Testing
 
 ```bash
-# Test citation/source grounding
-node scripts/test-citation-grounding.mjs
-
-# Test comprehensive RAG pipeline
-node scripts/test-comprehensive-rag.mjs
-
-# Test professor-level intelligence
-node scripts/test-professor-level-intelligence.mjs
+# Regresi end-to-end: index → search → chat → settings → keamanan folder
+BASE=http://localhost:3000/api node scripts/e2e-smoke.mjs
 ```
 
 > **Penting:** Pastikan server ATLAS berjalan terlebih dahulu (`npm run dev`) sebelum menjalankan test.
@@ -239,7 +233,7 @@ npm run start
 |---------|--------|
 | `EADDRINUSE` (port bentrok) | Ubah `PORT=3001` di `.env`, lalu update `apps/web/vite.config.ts` proxy target ke port yang sama |
 | `ECONNREFUSED` ke server | Pastikan `npm run dev` berjalan, cek port di `.env` sama dengan `vite.config.ts` |
-| API key error / AI tidak merespons | Pastikan `OPENROUTER_API_KEY` valid di `.env`, cek koneksi internet |
+| API key error / AI tidak merespons | Cek konfigurasi AI di **Settings** (provider + key valid), atau `GOOGLE_API_KEY` di `.env`; cek koneksi internet |
 | Search tidak menemukan file | Pastikan folder sudah ditambahkan, indexing selesai (status `Terindeks`), ekstensi didukung |
 | Build gagal | Pastikan Node.js 18+, jalankan `rm -rf node_modules package-lock.json && npm install` |
 | `SQLITE_MISUSE` saat shutdown | Known issue pada shutdown cepat, tidak mempengaruhi fungsionalitas |
