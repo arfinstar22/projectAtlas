@@ -6,6 +6,8 @@ import {
   Folder, 
   Document, 
   DocumentStatus,
+  FileCategory,
+  classifyFile,
   generateId, 
   isPathSafe, 
   getFileHash,
@@ -74,6 +76,15 @@ export class FolderService {
     await this.db.removeFolder(folderId);
     
     logger.info(`Removed folder: ${folder.path}`);
+  }
+
+  async removeAllFolders(): Promise<void> {
+    const folders = await this.getFolders();
+    for (const folder of folders) {
+      this.stopWatcher(folder.id);
+    }
+    await this.db.removeAllFolders();
+    logger.info('Removed all folders and cleaned up all document data');
   }
 
   async getFolders(): Promise<Folder[]> {
@@ -281,6 +292,24 @@ export class FolderService {
     const folders = await this.db.getFolders();
     const allowedPaths = folders.map(f => f.path);
     return isPathSafe(filePath, allowedPaths);
+  }
+
+  // Quick Index: Get all pending documents with file classification
+  async getPendingDocuments(folderId?: string): Promise<Array<Document & { category: FileCategory }>> {
+    const docs = await this.db.getDocuments(folderId, DocumentStatus.PENDING);
+    return docs.map(doc => ({
+      ...doc,
+      category: classifyFile(doc.extension)
+    }));
+  }
+
+  // Quick Index: Get all documents in folder with category for priority sorting
+  async getAllDocumentsForQuickIndex(folderId: string): Promise<Array<Document & { category: FileCategory }>> {
+    const docs = await this.db.getDocuments(folderId);
+    return docs.map(doc => ({
+      ...doc,
+      category: classifyFile(doc.extension)
+    }));
   }
 
   async cleanup(): Promise<void> {

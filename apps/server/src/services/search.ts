@@ -9,31 +9,40 @@ import {
   createLogger 
 } from '@atlas/core';
 import { QueryAnalyzer, QueryAnalysis, QueryIntent } from './query-analyzer.js';
+import { FilesystemAccessService, FSCandidate } from './filesystem.js';
 
 const logger = createLogger('SEARCH_SERVICE');
 
 export class SearchService {
   public db: AtlasDatabase; // Made public for AI service access
   private queryAnalyzer: QueryAnalyzer;
+  private filesystemAccess: FilesystemAccessService;
 
-  constructor(db: AtlasDatabase) {
+  constructor(db: AtlasDatabase, filesystemAccess: FilesystemAccessService) {
     this.db = db;
     this.queryAnalyzer = new QueryAnalyzer();
+    this.filesystemAccess = filesystemAccess;
   }
 
   async search(query: SearchQuery): Promise<SearchResult[]> {
     logger.info(`Searching: "${query.query}" (mode: ${query.mode})`);
-
+    let results: SearchResult[] = [];
     switch (query.mode) {
       case SearchMode.KEYWORD:
-        return this.keywordSearch(query);
+        results = await this.keywordSearch(query);
+        break;
       case SearchMode.SEMANTIC:
-        return this.semanticSearch(query);
+        results = await this.semanticSearch(query);
+        break;
       case SearchMode.HYBRID:
-        return this.hybridSearch(query);
+        results = await this.hybridSearch(query);
+        break;
       default:
-        return this.keywordSearch(query);
+        results = await this.keywordSearch(query);
+        break;
     }
+    logger.info(`[SEARCH_RESULT] total=${results.length}`);
+    return results;
   }
 
   // Enhanced search specifically for RAG context retrieval
@@ -80,9 +89,26 @@ export class SearchService {
   }
 
   private async hybridSearch(query: SearchQuery): Promise<SearchResult[]> {
-    // For MVP, use keyword search
-    // TODO: Implement hybrid scoring when embedding service is ready
-    return this.keywordSearch(query);
+    const ftsResults = await this.keywordSearch(query);
+    logger.info(`[SEARCH_INDEXED] results=${ftsResults.length}`);
+    
+    // Always combine with filesystem fallback so unindexed files are discoverable
+    const fsCandidates = await this.searchFilesystem(query.query, query.limit || 20);
+    logger.info(`[SEARCH_FS_DISCOVERY] candidates=${fsCandidates.length}`);
+    
+    const fsResults = await this.processFSCandidatesToResults(fsCandidates, query.query);
+    const combined = [...ftsResults, ...fsResults];
+    combined.sort((a, b) => b.score - a.score);
+    const limit = query.limit || 20;
+    return combined.slice(0, limit);
+  }
+
+  async searchFilesystem(keywords: string, limit: number = 30): Promise<FSCandidate[]> {
+    if (this.filesystemAccess.getAllowlistRoots().length === 0) {
+      return [];
+    }
+    const candidates = await this.filesystemAccess.discoverCandidates(keywords, limit);
+    return candidates;
   }
 
   // Enhanced hybrid retrieval for RAG
@@ -440,7 +466,8 @@ export class SearchService {
         score: this.calculateKeywordScore(chunk.text, query),
         snippet,
         metadata: chunk.metadata,
-        document
+        document,
+        sourceType: 'indexed'
       };
 
       results.push(result);
@@ -449,6 +476,63 @@ export class SearchService {
     // Sort by score (highest first)
     results.sort((a, b) => b.score - a.score);
 
+    return results;
+  }
+
+  private async processFSCandidatesToResults(
+    candidates: FSCandidate[],
+    query: string
+  ): Promise<SearchResult[]> {
+    const results: SearchResult[] = [];
+    const queryLower = query.toLowerCase();
+
+    for (const candidate of candidates) {
+      // Skip folders (no extension)
+      if (!candidate.extension) continue;
+
+      const nameLower = candidate.name.toLowerCase();
+      let score = 0;
+      const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2);
+      for (const word of queryWords) {
+        if (nameLower.includes(word)) score += 2;
+      }
+      if (score === 0) continue;
+
+      let text: string | undefined;
+      try {
+        const read = await this.filesystemAccess.readFileDirect(candidate.path);
+        text = read.result.text;
+      } catch {
+        // Content read not critical for metadata results
+      }
+
+      const snippet = text ? extractSnippet(text, query, 300) : '';
+      const now = new Date();
+      results.push({
+        documentId: '',
+        chunkId: `fs:${candidate.path}`,
+        score,
+        snippet,
+        metadata: { startOffset: 0, endOffset: 0 },
+        document: {
+          id: '',
+          name: candidate.name,
+          path: candidate.path,
+          extension: candidate.extension,
+          size: candidate.size,
+          createdAt: now,
+          modifiedAt: candidate.modifiedAt,
+          hash: '',
+          mimeType: '',
+          folderId: '',
+          status: 'pending' as any,
+          metadata: {}
+        },
+        sourceType: 'filesystem'
+      });
+    }
+
+    results.sort((a, b) => b.score - a.score);
     return results;
   }
 

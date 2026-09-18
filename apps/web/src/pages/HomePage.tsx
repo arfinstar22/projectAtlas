@@ -1,5 +1,5 @@
-import React from 'react';
-import { useQuery } from 'react-query';
+import React, { useState } from 'react';
+import { useQuery, useQueryClient, useMutation } from 'react-query';
 import { 
   FolderOpen, 
   FileText, 
@@ -12,11 +12,13 @@ import {
   ArrowRight,
   Shield,
   Database,
+  Trash2,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { api } from '../services/api';
 import { cn, cardVariants, badgeVariants, buttonVariants } from '../design-system';
 import { FolderPicker } from '../components/FolderPicker';
+import toast from 'react-hot-toast';
 
 export function HomePage() {
   const { data: stats } = useQuery('stats', api.getStats);
@@ -25,9 +27,24 @@ export function HomePage() {
     api.getDocuments({ limit: 5 })
   );
   const [showFolderPicker, setShowFolderPicker] = React.useState(false);
+  const queryClient = useQueryClient();
 
-  const handleFolderAdded = () => {
+  const deleteMutation = useMutation(api.removeFolder, {
+    onSuccess: () => {
+      queryClient.invalidateQueries('folders');
+      queryClient.invalidateQueries('stats');
+      toast.success('Folder dihapus dari ATLAS');
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.error?.message || 'Gagal menghapus folder');
+    }
+  });
+
+  const handleFolderAdded = (folder: { id: string; path: string; name: string }) => {
     setShowFolderPicker(false);
+    if (folder?.path) {
+      window.location.href = `/documents?open=${encodeURIComponent(folder.path)}`;
+    }
   };
 
   return (
@@ -128,7 +145,7 @@ export function HomePage() {
           {folders?.folders?.length > 0 ? (
             <div className="space-y-2">
               {folders.folders.map((folder: any) => (
-                <FolderCard key={folder.id} folder={folder} />
+                <FolderCard key={folder.id} folder={folder} onDelete={(id) => deleteMutation.mutate(id)} />
               ))}
             </div>
           ) : (
@@ -289,7 +306,9 @@ function ActionLink({ href, icon: Icon, title, description }: {
   );
 }
 
-function FolderCard({ folder }: { folder: any }) {
+function FolderCard({ folder, onDelete }: { folder: any; onDelete?: (id: string) => void }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   return (
     <div className="flex items-center justify-between p-3 border border-border rounded-lg hover:bg-surface-700/50 transition-colors">
       <div className="flex items-center gap-3 min-w-0">
@@ -306,6 +325,35 @@ function FolderCard({ folder }: { folder: any }) {
           {folder.documentCount || 0} dokumen
         </span>
         <div className="w-2 h-2 bg-green-500 rounded-full" />
+        {confirmDelete ? (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => {
+                onDelete?.(folder.id);
+                setConfirmDelete(false);
+              }}
+              className="p-1.5 text-red-400 hover:bg-red-500/20 rounded transition-colors"
+              title="Konfirmasi hapus"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="p-1.5 text-text-muted hover:bg-surface-600 rounded transition-colors"
+              title="Batal"
+            >
+              <AlertCircle className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="p-1.5 text-text-muted hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+            title="Hapus dari ATLAS"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
       </div>
     </div>
   );

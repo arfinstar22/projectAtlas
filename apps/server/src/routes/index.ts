@@ -1,9 +1,13 @@
 import { FastifyInstance } from 'fastify';
+import { promises as fs } from 'fs';
+import os from 'os';
+import path from 'path';
 import { AtlasDatabase } from '../database.js';
 import { FolderService } from '../services/folder.js';
 import { IndexingService } from '../services/indexing.js';
 import { SearchService } from '../services/search.js';
 import { AIService } from '../services/ai.js';
+import { FilesystemAccessService } from '../services/filesystem.js';
 
 export interface ServiceDependencies {
   db: AtlasDatabase;
@@ -11,15 +15,18 @@ export interface ServiceDependencies {
   indexingService: IndexingService;
   searchService: SearchService;
   aiService: AIService;
+  filesystemAccess: FilesystemAccessService;
 }
 
 export async function registerRoutes(app: FastifyInstance, services: ServiceDependencies) {
-  const { db, folderService, indexingService, searchService, aiService } = services;
+  const { db, folderService, indexingService, searchService, aiService, filesystemAccess } = services;
 
   // Folder management routes
   await app.register(async (fastify) => {
-    fastify.get('/folders', async (request, reply) => {
-      const folders = folderService.getFolders();
+    fastify.get('/folders', async () => {
+      // Must await: getFolders() is async — without it Fastify serializes the
+      // Promise as {} and the sidebar's connected-folders list is empty.
+      const folders = await folderService.getFolders();
       return { folders };
     });
 
@@ -39,15 +46,14 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
       try {
         const folder = await folderService.addFolder(path);
         
-        // Scan folder for files first
-        await folderService.scanFolder(folder.id);
-
-        // Start indexing the folder
-        const jobId = await indexingService.startFolderIndexing(folder.id);
+        // Lazy filesystem: update allowlist so new folder is immediately
+        // searchable without auto-indexing. No content scan/parsing.
+        const allFolders = await folderService.getFolders();
+        filesystemAccess.setAllowlistedRoots(allFolders.map(f => f.path).filter(Boolean));
         
         return { 
           folder,
-          indexingJobId: jobId
+          message: `Folder "${folder.name}" berhasil terhubung. Eksplorasi filesystem siap digunakan.`
         };
       } catch (error: any) {
         reply.status(400);
@@ -62,15 +68,102 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
 
     fastify.delete('/folders/:id', async (request, reply) => {
       const { id } = request.params as { id: string };
-      
+
       try {
         await folderService.removeFolder(id);
+        // Keep the FS allowlist in sync: a removed folder must immediately
+        // lose direct-read/discovery access (security guarantee made in UI).
+        const allFolders = await folderService.getFolders();
+        filesystemAccess.setAllowlistedRoots(allFolders.map(f => f.path).filter(Boolean));
         return { success: true };
       } catch (error: any) {
         reply.status(404);
-        return { 
+        return {
           error: {
             code: 'FOLDER_NOT_FOUND',
+            message: error.message
+          }
+        };
+      }
+    });
+
+    // Remove ALL folders and their indexed data (sidebar "Hapus Semua").
+    fastify.delete('/folders', async () => {
+      await folderService.removeAllFolders();
+      const allFolders = await folderService.getFolders();
+      filesystemAccess.setAllowlistedRoots(allFolders.map(f => f.path).filter(Boolean));
+      return { success: true };
+    });
+
+    // Browser-folder upload fallback: receives files from the webkitdirectory
+    // input and writes them under <data-dir>/uploads/<folderName>/ so the
+    // normal indexing pipeline can process them like any local folder.
+    fastify.post('/folders/upload', async (request, reply) => {
+      try {
+        // parts() (not files()) so the leading 'folderName' text field is
+        // visible in the same stream.
+        const files: Array<{ buffer: Buffer; relPath: string }> = [];
+        let folderName = '';
+
+        for await (const part of request.parts()) {
+          if (part.type === 'file') {
+            const buffer = await part.toBuffer();
+            // The webkitdirectory input passes "root/sub/dir/file.ext" as the
+            // filename — strip the leading root segment so relative structure
+            // inside the upload folder is preserved.
+            const relPath = part.filename && part.filename.includes('/')
+              ? part.filename.split('/').slice(1).join('/')
+              : (part.filename || '');
+            files.push({ buffer, relPath });
+          } else if (part.fieldname === 'folderName') {
+            folderName = String((part as any).value ?? '');
+          }
+        }
+
+        const safeName = path.basename(folderName || 'uploaded-folder').replace(/[\r\n]/g, '');
+        if (!safeName || safeName === '.' || safeName === '..') {
+          reply.status(400);
+          return { error: { code: 'INVALID_FOLDER_NAME', message: 'Nama folder tidak valid.' } };
+        }
+        if (files.length === 0) {
+          reply.status(400);
+          return { error: { code: 'NO_FILES', message: 'Tidak ada file yang diunggah.' } };
+        }
+
+        // Store uploads inside the server data dir (keeps everything local).
+        const dataDir = process.env.DATABASE_PATH
+          ? path.dirname(path.resolve(process.env.DATABASE_PATH))
+          : path.resolve('./data');
+        const targetDir = path.join(dataDir, 'uploads', safeName);
+        await fs.mkdir(targetDir, { recursive: true });
+
+        let written = 0;
+        for (const file of files) {
+          const rel = file.relPath.replace(/\.\./g, '').replace(/^[a-zA-Z]:[\\/]/, '');
+          const dest = path.resolve(targetDir, rel);
+          if (!dest.startsWith(path.resolve(targetDir) + path.sep) && dest !== path.resolve(targetDir)) {
+            continue; // Path traversal guard.
+          }
+          await fs.mkdir(path.dirname(dest), { recursive: true });
+          await fs.writeFile(dest, file.buffer);
+          written++;
+        }
+
+        if (written === 0) {
+          reply.status(400);
+          return { error: { code: 'NO_FILES_WRITTEN', message: 'Gagal menulis file unggahan.' } };
+        }
+
+        const folder = await folderService.addFolder(targetDir);
+        const allFolders = await folderService.getFolders();
+        filesystemAccess.setAllowlistedRoots(allFolders.map(f => f.path).filter(Boolean));
+
+        return { folder, message: `Folder "${folder.name}" berhasil ditambahkan dari unggahan.` };
+      } catch (error: any) {
+        reply.status(400);
+        return {
+          error: {
+            code: 'FOLDER_UPLOAD_FAILED',
             message: error.message
           }
         };
@@ -97,6 +190,40 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
           }
         };
       }
+    });
+
+    fastify.post('/folders/:id/quick-index', {
+      schema: { body: { type: 'object' } },
+      handler: async (request, reply) => {
+        const { id } = request.params as { id: string };
+        try {
+          const jobId = await indexingService.startQuickIndex(id);
+          return { indexingJobId: jobId };
+        } catch (error: any) {
+          reply.status(404);
+          return { 
+            error: {
+              code: 'FOLDER_QUICK_INDEX_FAILED',
+              message: error.message
+            }
+          };
+        }
+      }
+    });
+
+    fastify.get('/folders/:id/quick-index/progress', async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const jobId = indexingService.getFolderQuickIndexJobId(id);
+      if (!jobId) {
+        reply.status(404);
+        return { error: 'Job not found' };
+      }
+      const progress = indexingService.getQuickIndexProgress(jobId);
+      if (!progress) {
+        reply.status(404);
+        return { error: 'Progress not found' };
+      }
+      return { progress };
     });
   }, { prefix: '/api' });
 
@@ -254,9 +381,9 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
 
   // Indexing routes
   await app.register(async (fastify) => {
-    fastify.get('/indexing/jobs', async (request, reply) => {
+    fastify.get('/indexing/jobs', async (request) => {
       const { status } = request.query as { status?: string };
-      const jobs = indexingService.getJobs(status as any);
+      const jobs = await indexingService.getJobs(status as any);
       return { jobs };
     });
 
@@ -333,23 +460,87 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
       }
     });
 
-    fastify.get('/ai/status', async (request, reply) => {
+    fastify.get('/ai/status', async () => {
       const providerInfo = aiService.getProviderInfo();
       return {
-        provider: providerInfo.name,
+        provider: providerInfo.provider,
         configured: providerInfo.configured,
-        available: providerInfo.configured
+        available: providerInfo.configured,
+        hasApiKey: providerInfo.hasApiKey,
+        model: providerInfo.model,
+        embeddingModel: providerInfo.embeddingModel,
+        autoFallback: providerInfo.autoFallback
       };
     });
 
-    fastify.post('/ai/test', async (request, reply) => {
+    // Model catalog for the Settings dropdowns.
+    fastify.get('/ai/models', async (request, reply) => {
       try {
-        const testResult = await aiService.testConnection();
+        const { apiKey } = (request.query || {}) as { apiKey?: string };
+        const models = await aiService.listModels(apiKey);
+        return { success: true, chat: models.chat, embedding: models.embedding };
+      } catch (error: any) {
+        reply.status(502);
+        return { success: false, message: error.message };
+      }
+    });
+
+    // Persist runtime AI configuration (Settings "Simpan Pengaturan").
+    fastify.post('/ai/config', async (request, reply) => {
+      const { apiKey, model, embeddingModel, autoFallback } = (request.body || {}) as {
+        apiKey?: string;
+        model?: string;
+        embeddingModel?: string;
+        autoFallback?: boolean;
+      };
+
+      // Ignore the masked placeholder the frontend sends back untouched.
+      const isMasked = typeof apiKey === 'string' && apiKey.includes('•');
+      const effectiveApiKey = isMasked ? undefined : apiKey;
+
+      if (effectiveApiKey === undefined && model === undefined && embeddingModel === undefined && autoFallback === undefined) {
+        reply.status(400);
+        return { error: { code: 'EMPTY_CONFIG', message: 'Tidak ada pengaturan yang dikirim.' } };
+      }
+
+      try {
+        aiService.updateConfig({
+          ...(effectiveApiKey !== undefined ? { apiKey: effectiveApiKey } : {}),
+          ...(model !== undefined ? { model } : {}),
+          ...(embeddingModel !== undefined ? { embeddingModel } : {}),
+          ...(autoFallback !== undefined ? { autoFallback } : {})
+        });
+
+        // Persist server-side so config survives restarts (restored in index.ts).
+        await db.setSetting('ai_config', JSON.stringify(aiService.getEffectiveConfig()));
+
+        const info = aiService.getProviderInfo();
+        return {
+          success: true,
+          hasApiKey: info.hasApiKey,
+          model: info.model,
+          embeddingModel: info.embeddingModel,
+          provider: info.provider,
+          configured: info.configured
+        };
+      } catch (error: any) {
+        reply.status(400);
+        return { error: { code: 'CONFIG_SAVE_FAILED', message: error.message } };
+      }
+    });
+
+    // Connection test. Accepts an optional API key to test BEFORE saving it.
+    fastify.post('/ai/test', async (request) => {
+      try {
+        const { apiKey } = (request.body || {}) as { apiKey?: string };
+        const masked = typeof apiKey === 'string' && apiKey.includes('•');
+        const testResult = await aiService.testConnection(masked ? undefined : apiKey);
         return testResult;
       } catch (error: any) {
         return {
           success: false,
-          error: error.message
+          code: 'UNKNOWN',
+          message: error.message
         };
       }
     });
@@ -380,7 +571,72 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
       };
     });
 
-    // Filesystem security - path traversal protection
+    // Filesystem explorer listing for the Documents page.
+    // Bounded single-level listing; enforced against the connected-folder
+    // allowlist (same rule as direct reads). Never reads file contents.
+    fastify.get('/fs/browse', async (request, reply) => {
+      const { path: requestedPath } = request.query as { path?: string };
+
+      try {
+        if (!requestedPath) {
+          const start = await filesystemAccess.getDefaultBrowsePath();
+          const listing = await filesystemAccess.browseDirectory(start);
+          return {
+            ...listing,
+            quickLocations: buildQuickLocations(),
+            files: listing.files.map(toExplorerFile)
+          };
+        }
+
+        const listing = await filesystemAccess.browseDirectory(requestedPath);
+        return {
+          ...listing,
+          quickLocations: buildQuickLocations(),
+          files: listing.files.map(toExplorerFile)
+        };
+      } catch (error: any) {
+        const isDenied = String(error.message || '').includes('ditolak');
+        reply.status(isDenied ? 403 : 400);
+        return {
+          error: {
+            code: isDenied ? 'ACCESS_DENIED' : 'BROWSE_FAILED',
+            message: error.message
+          }
+        };
+      }
+    });
+
+    // Native OS folder picker. Only meaningful when ATLAS runs on the user's
+    // desktop (Electron); the browser build reports unsupported and the UI
+    // falls back to manual path or the webkitdirectory upload.
+    fastify.post('/fs/browse-dialog', async (_request, reply) => {
+      reply.send({ success: false, unsupported: true });
+    });
+
+    // Shared helpers for the /fs/browse response shape expected by DocumentsPage
+function buildQuickLocations(): Array<{ id: string; label: string; icon: string; path: string }> {
+  const home = os.homedir();
+  return [
+    { id: 'home', label: 'Home', icon: '🏠', path: home },
+    { id: 'documents', label: 'Documents', icon: '📄', path: path.join(home, 'Documents') },
+    { id: 'downloads', label: 'Downloads', icon: '⬇️', path: path.join(home, 'Downloads') },
+    { id: 'desktop', label: 'Desktop', icon: '🖥️', path: path.join(home, 'Desktop') }
+  ];
+}
+
+function toExplorerFile(file: { name: string; path: string; extension: string; size: number; modifiedAt: Date; isSupported: boolean }) {
+  return {
+    name: file.name,
+    path: file.path,
+    extension: file.extension.replace('.', ''),
+    size: file.size,
+    modified_at: file.modifiedAt.toISOString(),
+    isSupported: file.isSupported,
+    isIndexed: false
+  };
+}
+
+// Filesystem security - path traversal protection
     fastify.get('/fs/explore', async (request, reply) => {
       const { path: requestedPath } = request.query as { path?: string };
       if (!requestedPath) {

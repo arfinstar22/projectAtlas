@@ -129,6 +129,14 @@ export class AtlasDatabase {
       )
     `);
 
+    // App settings (simple key/value store, e.g. persisted AI provider config)
+    await this.db.exec(`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    `);
+
     // Create indexes for performance
     await this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_documents_folder_id ON documents (folder_id);
@@ -156,7 +164,11 @@ export class AtlasDatabase {
   }
 
   async getFolders(): Promise<Folder[]> {
-    const rows = await this.db.all('SELECT * FROM folders WHERE is_active = 1 ORDER BY added_at DESC');
+    const rows = await this.db.all(
+      `SELECT f.*,
+              (SELECT COUNT(*) FROM documents d WHERE d.folder_id = f.id) AS document_count
+       FROM folders f WHERE f.is_active = 1 ORDER BY f.added_at DESC`
+    );
     return rows.map(this.mapFolder);
   }
 
@@ -165,7 +177,44 @@ export class AtlasDatabase {
   }
 
   async removeFolder(folderId: string): Promise<void> {
+    // Get all document IDs in this folder first (before cascade deletes them)
+    const documents = await this.db.all(
+      'SELECT id FROM documents WHERE folder_id = ?',
+      [folderId]
+    );
+
+    // Clean up FTS entries for all documents in this folder
+    for (const doc of documents) {
+      await this.db.run(
+        'DELETE FROM chunks_fts WHERE chunk_id IN (SELECT id FROM chunks WHERE document_id = ?)',
+        [doc.id]
+      );
+    }
+
+    // Delete the folder (cascades to documents, chunks, embeddings, indexing_jobs)
     await this.db.run('DELETE FROM folders WHERE id = ?', [folderId]);
+  }
+
+  async removeAllFolders(): Promise<void> {
+    // Get all folder IDs
+    const folders = await this.db.all('SELECT id FROM folders');
+    
+    // For each folder, clean up FTS entries
+    for (const folder of folders) {
+      const documents = await this.db.all(
+        'SELECT id FROM documents WHERE folder_id = ?',
+        [folder.id]
+      );
+      for (const doc of documents) {
+        await this.db.run(
+          'DELETE FROM chunks_fts WHERE chunk_id IN (SELECT id FROM chunks WHERE document_id = ?)',
+          [doc.id]
+        );
+      }
+    }
+
+    // Delete all folders (cascades to everything)
+    await this.db.run('DELETE FROM folders');
   }
 
   // Document operations
@@ -184,6 +233,24 @@ export class AtlasDatabase {
         document.metadata?.pageCount, document.metadata?.sheetCount,
         document.metadata?.author, document.metadata?.title, document.metadata?.subject,
         document.metadata?.keywords?.join(','), document.metadata?.language
+      ]
+    );
+  }
+
+  // Metadata-only update. Never rewrites status: `addDocument` carries the
+  // in-memory snapshot's stale PENDING and can clobber an INDEXED row during
+  // overlapping folder jobs (last-write-wins).
+  async updateDocumentMetadata(id: string, metadata: Document['metadata']): Promise<void> {
+    await this.db.run(
+      `UPDATE documents SET
+        page_count = ?, sheet_count = ?, author = ?, title = ?,
+        subject = ?, keywords = ?, language = ?
+       WHERE id = ?`,
+      [
+        metadata?.pageCount, metadata?.sheetCount,
+        metadata?.author, metadata?.title, metadata?.subject,
+        metadata?.keywords?.join(','), metadata?.language,
+        id
       ]
     );
   }
@@ -357,6 +424,38 @@ export class AtlasDatabase {
     return rows.map(this.mapJob);
   }
 
+  // Requeue documents stuck in 'processing' after a server restart
+  async resetStuckProcessingDocuments(): Promise<{ folderIds: string[] }> {
+    const rows = await this.db.all(
+      "SELECT DISTINCT folder_id FROM documents WHERE status = 'processing'"
+    );
+    await this.db.run(
+      "UPDATE documents SET status = 'pending', indexed_at = NULL WHERE status = 'processing'"
+    );
+    return { folderIds: rows.map(r => r.folder_id as string) };
+  }
+
+  // Folders that still have pending/processing documents (nothing to index = no job)
+  async getFoldersWithPendingDocuments(): Promise<string[]> {
+    const rows = await this.db.all(
+      "SELECT DISTINCT folder_id FROM documents WHERE status IN ('pending', 'processing')"
+    );
+    return rows.map(r => r.folder_id as string);
+  }
+
+  // App settings (key/value store for persisted runtime config)
+  async getSetting(key: string): Promise<string | null> {
+    const row = await this.db.get('SELECT value FROM app_settings WHERE key = ?', [key]);
+    return row ? row.value : null;
+  }
+
+  async setSetting(key: string, value: string): Promise<void> {
+    await this.db.run(
+      'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
+      [key, value]
+    );
+  }
+
   // Statistics
   getStats() {
     return Promise.all([
@@ -370,6 +469,69 @@ export class AtlasDatabase {
       indexed: indexedCount.count,
       chunks: chunkCount.count
     }));
+  }
+
+  // Batch document operations for Quick Index
+  async getDocumentsForQuickIndex(folderId?: string): Promise<Document[]> {
+    let query = "SELECT * FROM documents WHERE status = 'pending'";
+    const params: any[] = [];
+    if (folderId) {
+      query += ' AND folder_id = ?';
+      params.push(folderId);
+    }
+    const rows = await this.db.all(query, params);
+    return rows.map(this.mapDocument);
+  }
+
+  async batchUpdateDocumentStatus(ids: string[], status: DocumentStatus, indexedAt?: Date): Promise<void> {
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => '?').join(',');
+    await this.db.run(
+      `UPDATE documents SET status = ?, indexed_at = ? WHERE id IN (${placeholders})`,
+      [status, indexedAt?.toISOString(), ...ids]
+    );
+  }
+
+  // Serializes batch chunk writes. The raw BEGIN/COMMIT below runs on the ONE
+  // shared sqlite connection; when parallel indexing workers batch at the
+  // same time their statements interleave and SQLite rejects with
+  // "cannot start a transaction within a transaction". Chaining every batch
+  // onto a single promise keeps each BEGIN..COMMIT group atomic end-to-end.
+  private batchWriteChain: Promise<void> = Promise.resolve();
+
+  async batchAddChunks(chunks: DocumentChunk[]): Promise<void> {
+    if (chunks.length === 0) return;
+    const run = this.batchWriteChain.then(() => this.runBatchAddChunks(chunks));
+    // Keep the chain alive even when a batch fails.
+    this.batchWriteChain = run.catch(() => {});
+    return run;
+  }
+
+  private async runBatchAddChunks(chunks: DocumentChunk[]): Promise<void> {
+    const stmts = chunks.map(c => ({
+      id: c.id, documentId: c.documentId, chunkIndex: c.chunkIndex, text: c.text,
+      page: c.metadata.page, sheet: c.metadata.sheet, section: c.metadata.section,
+      startOffset: c.metadata.startOffset, endOffset: c.metadata.endOffset,
+      createdAt: c.createdAt.toISOString()
+    }));
+    // Use a single transaction for the batch
+    await this.db.exec('BEGIN');
+    try {
+      for (const chunk of stmts) {
+        await this.db.run(
+          `INSERT INTO chunks (id, document_id, chunk_index, text, page, sheet, section, start_offset, end_offset, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [chunk.id, chunk.documentId, chunk.chunkIndex, chunk.text, chunk.page, chunk.sheet, chunk.section, chunk.startOffset, chunk.endOffset, chunk.createdAt]
+        );
+        await this.db.run(
+          'INSERT INTO chunks_fts(chunk_id, text) VALUES (?, ?)',
+          [chunk.id, chunk.text]
+        );
+      }
+      await this.db.exec('COMMIT');
+    } catch (error) {
+      await this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   async close(): Promise<void> {
@@ -448,5 +610,9 @@ export class AtlasDatabase {
       completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
       error: row.error
     };
+  }
+
+  async all(query: string, params: any[] = []): Promise<any[]> {
+    return await this.db.all(query, params);
   }
 }

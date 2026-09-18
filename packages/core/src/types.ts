@@ -66,6 +66,7 @@ export interface SearchResult {
   snippet: string;
   metadata: ChunkMetadata;
   document: Document;
+  sourceType: 'indexed' | 'filesystem';
 }
 
 export interface SearchQuery {
@@ -127,7 +128,52 @@ export interface IndexingJob {
 export enum IndexingJobType {
   FOLDER_SCAN = 'folder_scan',
   DOCUMENT_PROCESS = 'document_process',
-  REINDEX = 'reindex'
+  REINDEX = 'reindex',
+  QUICK_INDEX = 'quick_index'
+}
+
+export enum FileCategory {
+  FAST_TEXT = 'fast_text',
+  DOCUMENT = 'document',
+  SPREADSHEET = 'spreadsheet',
+  PDF = 'pdf',
+  IMAGE = 'image',
+  UNSUPPORTED = 'unsupported'
+}
+
+export function classifyFile(extension: string): FileCategory {
+  const ext = extension.toLowerCase();
+  if (['.txt', '.md', '.markdown', '.csv'].includes(ext)) return FileCategory.FAST_TEXT;
+  if (['.docx'].includes(ext)) return FileCategory.DOCUMENT;
+  if (['.xlsx', '.xls'].includes(ext)) return FileCategory.SPREADSHEET;
+  if (['.pdf'].includes(ext)) return FileCategory.PDF;
+  if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) return FileCategory.IMAGE;
+  return FileCategory.UNSUPPORTED;
+}
+
+export function quickIndexPriority(category: FileCategory): number {
+  switch (category) {
+    case FileCategory.FAST_TEXT: return 0;
+    case FileCategory.DOCUMENT: return 1;
+    case FileCategory.SPREADSHEET: return 1;
+    case FileCategory.PDF: return 2;
+    case FileCategory.IMAGE: return 3;
+    default: return 4;
+  }
+}
+
+export interface QuickIndexProgress {
+  jobId: string;
+  folderId: string;
+  status: JobStatus;
+  total: number;
+  queued: number;
+  processing: number;
+  indexed: number;
+  skipped: number;
+  failed: number;
+  bytesProcessed: number;
+  error?: string;
 }
 
 export enum JobStatus {

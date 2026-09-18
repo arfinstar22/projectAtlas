@@ -2,25 +2,57 @@ import React, { useState } from 'react';
 import { useQuery } from 'react-query';
 import { 
   MessageSquare, 
+  ShieldAlert, 
   Send, 
   FileText, 
   ExternalLink,
   Loader2,
   Brain,
-  AlertCircle
+  AlertCircle,
+  Search,
+  File,
+  FolderOpen,
+  Clock,
+  CheckCircle2,
+  ChevronRight
 } from 'lucide-react';
 import { api } from '../services/api';
 import toast from 'react-hot-toast';
 import { cn, cardVariants, badgeVariants, buttonVariants } from '../design-system';
 
+interface DiscoveryDocument {
+  id: string;
+  name: string;
+  extension: string;
+  size: number;
+  path: string;
+  status: string;
+  folderId: string;
+  modifiedAt: string;
+}
+
+// Shape returned by AIService.prepareSources() (flat, NOT nested).
+interface ChatSource {
+  documentId: string;
+  documentName: string;
+  chunkId: string;
+  page?: number;
+  snippet: string;
+}
+
+interface ChatMessage {
+  id: string;
+  type: 'user' | 'assistant';
+  content: string;
+  sources?: ChatSource[];
+  fallbackNotice?: string;
+  responseType?: 'chat' | 'discovery';
+  discoveryDocuments?: DiscoveryDocument[];
+  timestamp: Date;
+}
+
 export function ChatPage() {
-  const [messages, setMessages] = useState<Array<{
-    id: string;
-    type: 'user' | 'assistant';
-    content: string;
-    sources?: any[];
-    timestamp: Date;
-  }>>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -30,9 +62,9 @@ export function ChatPage() {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    const userMessage = {
+    const userMessage: ChatMessage = {
       id: Date.now().toString(),
-      type: 'user' as const,
+      type: 'user',
       content: input.trim(),
       timestamp: new Date()
     };
@@ -44,19 +76,22 @@ export function ChatPage() {
     try {
       const response = await api.chat(input.trim());
 
-      const aiResponse = {
+      const aiResponse: ChatMessage = {
         id: (Date.now() + 1).toString(),
-        type: 'assistant' as const,
+        type: 'assistant',
         content: response.response,
         sources: response.sources,
+        fallbackNotice: response.fallbackNotice,
+        responseType: response.responseType,
+        discoveryDocuments: response.discoveryDocuments,
         timestamp: new Date()
       };
 
       setMessages(prev => [...prev, aiResponse]);
     } catch (error: any) {
-      const errorMessage = {
+      const errorMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
-        type: 'assistant' as const,
+        type: 'assistant',
         content: error.response?.data?.error?.message || 'Maaf, terjadi kesalahan saat memproses pertanyaan Anda. Pastikan dokumen sudah terindeks dan coba lagi.',
         timestamp: new Date()
       };
@@ -172,7 +207,7 @@ export function ChatPage() {
   );
 }
 
-function MessageBubble({ message }: { message: any }) {
+function MessageBubble({ message }: { message: ChatMessage }) {
   return (
     <div className={cn('flex', message.type === 'user' ? 'justify-end' : 'justify-start')}>
       <div className={cn(
@@ -181,35 +216,142 @@ function MessageBubble({ message }: { message: any }) {
           ? 'bg-primary-600 text-surface-950' 
           : 'bg-surface-800 text-surface-100 border border-border'
       )}>
-        <p className="leading-relaxed">{message.content}</p>
-        
-        {message.sources && message.sources.length > 0 && (
-          <div className="border-t border-border/50 pt-3 mt-3">
-            <p className="text-sm font-medium mb-2 text-text-muted">Sumber:</p>
-            <div className="space-y-2">
-              {message.sources.map((source: any, index: number) => (
-                <div key={index} className="flex items-center justify-between p-2 bg-surface-700/50 border border-border rounded text-sm">
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-primary-400" />
-                    <span className="text-surface-300">{source.document.name}</span>
-                    {source.metadata.page && (
-                      <span className="text-text-muted">— Halaman {source.metadata.page}</span>
-                    )}
-                  </div>
-                  <button className="flex items-center gap-1 text-primary-400 hover:underline">
-                    <ExternalLink className="w-3 h-3" />
-                    Buka
-                  </button>
+        {message.responseType === 'discovery' ? (
+          <>
+            <p className="leading-relaxed">{message.content}</p>
+            <DiscoveryResults documents={message.discoveryDocuments || []} />
+          </>
+        ) : (
+          <>
+            <p className="leading-relaxed">{message.content}</p>
+            
+            {message.fallbackNotice && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300 flex items-start gap-2">
+                <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>{message.fallbackNotice}</span>
+              </div>
+            )}
+            
+            {message.sources && message.sources.length > 0 && (
+              <div className="border-t border-border/50 pt-3 mt-3">
+                <p className="text-sm font-medium mb-2 text-text-muted">Sumber:</p>
+                <div className="space-y-2">
+                  {message.sources.map((source, index) => (
+                    <div key={source?.chunkId || index} className="p-2 bg-surface-700/50 border border-border rounded text-sm">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="w-4 h-4 text-primary-400 flex-shrink-0" />
+                          <span className="text-surface-300 truncate">
+                            {source?.documentName || 'Dokumen'}
+                          </span>
+                          {source?.page && (
+                            <span className="text-text-muted flex-shrink-0">— Halaman {source.page}</span>
+                          )}
+                        </div>
+                        <button className="flex items-center gap-1 text-primary-400 hover:underline flex-shrink-0">
+                          <ExternalLink className="w-3 h-3" />
+                          Buka
+                        </button>
+                      </div>
+                      {source?.snippet && (
+                        <p className="mt-1 text-xs text-text-muted line-clamp-2">{source.snippet}</p>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
+            )}
+          </>
         )}
-
+        
         <div className="text-xs text-text-muted/70">
           {message.timestamp.toLocaleTimeString('id-ID')}
         </div>
       </div>
     </div>
   );
+}
+
+function DiscoveryResults({ documents, query }: { documents: DiscoveryDocument[]; query?: string }) {
+  if (!documents || documents.length === 0) {
+    return (
+      <div className="border-t border-border/50 pt-3 mt-3">
+        <div className="text-center py-6 text-text-muted">
+          <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
+          <p className="font-medium mb-1">Dokumen yang cocok belum ditemukan</p>
+          <p className="text-sm">Coba gunakan nama file, jenis dokumen, atau kata kunci lain.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-t border-border/50 pt-3 mt-3">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Search className="w-4 h-4 text-primary-400" />
+          <span className="text-sm font-medium text-surface-300">Hasil Pencarian Dokumen</span>
+        </div>
+        <span className="text-xs text-text-muted bg-surface-700/50 px-2 py-0.5 rounded">
+          {documents.length} dokumen ditemukan
+        </span>
+      </div>
+      <div className="space-y-2">
+        {documents.map((doc, index) => (
+          <div key={`${doc.id}-${index}`} className="group p-3 bg-surface-700/50 border border-border rounded-lg hover:border-primary-500/30 hover:bg-surface-600/50 transition-colors">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-primary-500/15 rounded-lg flex-shrink-0">
+                <FileText className="w-5 h-5 text-primary-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-surface-100 truncate">{doc.name}</p>
+                <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-text-muted">
+                  <span className="flex items-center gap-1">
+                    <File className="w-3 h-3" />
+                    {doc.extension || '-'}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span>{formatFileSize(doc.size)}</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <FolderOpen className="w-3 h-3" />
+                    {doc.path ? doc.path.split('/').slice(-2).join('/') : '-'}
+                  </span>
+                  <span className={cn('px-1.5 py-0.5 rounded text-xs', 
+                    doc.status === 'indexed' ? 'bg-green-500/20 text-green-400' :
+                    doc.status === 'processing' ? 'bg-yellow-500/20 text-yellow-400' :
+                    doc.status === 'error' ? 'bg-red-500/20 text-red-400' :
+                    'bg-surface-600 text-text-muted'
+                  )}>
+                    {doc.status === 'indexed' && '✓ Terindeks'}
+                    {doc.status === 'processing' && '⏳ Diproses'}
+                    {doc.status === 'error' && '✗ Error'}
+                    {doc.status === 'pending' && '⏳ Menunggu'}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-text-muted/70 truncate">{doc.path}</p>
+              </div>
+            </div>
+            <div className="mt-3 pt-3 border-t border-border/30 flex items-center justify-end">
+              <button 
+                className="flex items-center gap-1 text-primary-400 hover:underline text-sm px-3 py-1.5 rounded border border-primary-500/30 hover:bg-primary-500/10 transition-colors"
+                disabled={!doc.id}
+              >
+                <ChevronRight className="w-3 h-3" />
+                Pratinjau
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '-';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }

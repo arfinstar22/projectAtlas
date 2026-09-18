@@ -3,8 +3,17 @@ import { createLogger } from '@atlas/core';
 const logger = createLogger('QUERY_ANALYZER');
 
 export enum QueryIntent {
+  CONVERSATIONAL = 'conversational',
+  DOCUMENT_DISCOVERY = 'document_discovery',
+  DOCUMENT_QUESTION = 'document_question',
+  DOCUMENT_SUMMARY = 'document_summary',
+  DOCUMENT_COMPARISON = 'document_comparison',
+  DOCUMENT_EXPLANATION = 'document_explanation',
+  OUT_OF_SCOPE = 'out_of_scope',
+  UNCLEAR = 'unclear',
+  // Legacy aliases (used by existing retrieval logic)
   FACTUAL = 'factual',
-  DEFINITION = 'definition', 
+  DEFINITION = 'definition',
   SUMMARY = 'summary',
   EXPLANATION = 'explanation',
   COMPARISON = 'comparison',
@@ -128,6 +137,47 @@ export class QueryAnalyzer {
     ]]
   ]);
 
+  // === CONVERSATIONAL DETECTION ===
+  private conversationalGreetings = [
+    'hai', 'halo', 'hello', 'hi', 'hey',
+    'selamat pagi', 'selamat siang', 'selamat sore', 'selamat malam',
+    'pagi', 'siang', 'sore', 'malam',
+    'apa kabar', 'kabar baik', 'kabar apa',
+    'good morning', 'good afternoon', 'good evening',
+  ];
+
+  private conversationalThanks = [
+    'terima kasih', 'makasih', 'thanks', 'thank you', 'thx',
+    'ok', 'oke', 'sip', 'siap', 'baik',
+    'mantap', 'keren', 'hebat', 'bagus',
+  ];
+
+  private conversationalBye = [
+    'dadah', 'bye', 'goodbye', 'selamat tinggal', 'see you',
+    'sampai jumpa', 'babay', 'chau',
+  ];
+
+  private conversationalPatterns: RegExp[] = [
+    /^(hai|halo|hello|hi|hey)\b/i,
+    /^(selamat\s+(pagi|siang|sore|malam))\b/i,
+    /^(apa\s+kabar)\b/i,
+    /^(terima\s+kasih|makasih|thanks|thank\s*you)\b/i,
+    /^(ok|oke|sip|siap|baik|mantap|keren|hebat|bagus)\b/i,
+    /^(dadah|bye|goodbye|selamat\s+tinggal|see\s*you|sampai\s+jumpa)\b/i,
+    /^(good\s+morning|good\s+afternoon|good\s+evening)\b/i,
+  ];
+
+  // === DOCUMENT DISCOVERY DETECTION ===
+  private discoveryPatterns: RegExp[] = [
+    /^(carikan|cari|find|search)\s+(file|dokumen|pdf|doc|skripsi|laporan|makalah|tugas|buku|jurnal|artikel)/i,
+    /^(tunjukkan|show|display)\s+(file|dokumen|pdf|skripsi|laporan|dokumen)/i,
+    /^(ada\s+(file|dokumen|pdf|skripsi|laporan))/i,
+    /^(mana\s+(file|dokumen|pdf|skripsi|laporan))/i,
+    /^(tampilkan|lihat)\s+(dokumen|file|daftar)/i,
+    /\b(tentang|about|regarding)\s+.+\bfile\b/i,
+    /^(cari|find)\s+\w+\s+(di|in|dari|from)\s+/i,
+  ];
+
   analyzeQuery(query: string): QueryAnalysis {
     const normalizedQuery = query.toLowerCase().trim();
     
@@ -176,6 +226,17 @@ export class QueryAnalyzer {
   }
 
   private detectIntent(query: string): QueryIntent {
+    // 1. CONVERSATIONAL — check FIRST, no RAG needed
+    if (this.isConversational(query)) {
+      return QueryIntent.CONVERSATIONAL;
+    }
+
+    // 2. DOCUMENT_DISCOVERY — search by filename/metadata
+    if (this.isDocumentDiscovery(query)) {
+      return QueryIntent.DOCUMENT_DISCOVERY;
+    }
+
+    // 3. Existing intent patterns
     for (const [intent, patterns] of this.intentPatterns) {
       for (const pattern of patterns) {
         if (pattern.test(query)) {
@@ -313,6 +374,39 @@ export class QueryAnalyzer {
     return questionWords.includes(word);
   }
 
+  // === CONVERSATIONAL DETECTION ===
+  isConversational(query: string): boolean {
+    const q = query.toLowerCase().trim();
+    if (q.length === 0) return false;
+
+    // Exact phrase match
+    if (this.conversationalGreetings.includes(q)) return true;
+    if (this.conversationalThanks.includes(q)) return true;
+    if (this.conversationalBye.includes(q)) return true;
+
+    // Pattern match (regex)
+    for (const pattern of this.conversationalPatterns) {
+      if (pattern.test(q)) return true;
+    }
+
+    // Short single-word greetings (<=5 chars, no question marks)
+    if (q.length <= 5 && !q.includes('?') && !q.includes(' ')) {
+      const shortGreetings = ['hai', 'halo', 'hello', 'hi', 'hey', 'ok', 'oke', 'sip', 'siap'];
+      if (shortGreetings.includes(q)) return true;
+    }
+
+    return false;
+  }
+
+  // === DOCUMENT DISCOVERY DETECTION ===
+  isDocumentDiscovery(query: string): boolean {
+    const q = query.toLowerCase().trim();
+    for (const pattern of this.discoveryPatterns) {
+      if (pattern.test(q)) return true;
+    }
+    return false;
+  }
+
   // Get retrieval strategy based on analysis
   getRetrievalStrategy(analysis: QueryAnalysis): {
     maxChunks: number;
@@ -326,26 +420,43 @@ export class QueryAnalyzer {
     let prioritizeRecent = false;
 
     switch (analysis.intent) {
+      // No retrieval needed for these intents
+      case QueryIntent.CONVERSATIONAL:
+      case QueryIntent.OUT_OF_SCOPE:
+      case QueryIntent.UNCLEAR:
+        maxChunks = 0;
+        break;
+
+      // Document discovery: search by metadata, not content
+      case QueryIntent.DOCUMENT_DISCOVERY:
+        maxChunks = 10;
+        prioritizeRecent = true;
+        break;
+
       case QueryIntent.DOCUMENT_OVERVIEW:
       case QueryIntent.SUMMARY:
+      case QueryIntent.DOCUMENT_SUMMARY:
         maxChunks = 8;
         requiresAdjacent = true;
         break;
         
       case QueryIntent.EXPLANATION:
       case QueryIntent.METHODOLOGY:
+      case QueryIntent.DOCUMENT_EXPLANATION:
         maxChunks = 7;
         requiresAdjacent = true;
         break;
         
       case QueryIntent.COMPARISON:
       case QueryIntent.CROSS_DOCUMENT:
+      case QueryIntent.DOCUMENT_COMPARISON:
         maxChunks = 10;
         crossDocument = true;
         break;
         
       case QueryIntent.FACTUAL:
       case QueryIntent.FINANCIAL:
+      case QueryIntent.DOCUMENT_QUESTION:
         maxChunks = 3;
         prioritizeRecent = true;
         break;

@@ -10,6 +10,7 @@ import { AtlasDatabase } from './database.js';
 import { IndexingService } from './services/indexing.js';
 import { SearchService } from './services/search.js';
 import { FolderService } from './services/folder.js';
+import { FilesystemAccessService } from './services/filesystem.js';
 import { AIService } from './services/ai.js';
 import { createLogger } from '@atlas/core';
 import { registerRoutes } from './routes/index.js';
@@ -30,6 +31,7 @@ export class AtlasServer {
   private searchService!: SearchService;
   private folderService!: FolderService;
   private aiService!: AIService;
+  private filesystemAccess!: FilesystemAccessService;
 
   constructor() {
     this.app = fastify({
@@ -39,7 +41,7 @@ export class AtlasServer {
 
   async initialize(): Promise<void> {
     await this.setupDatabase();
-    this.setupServices();
+    await this.setupServices();
     await this.setupMiddleware();
     await this.setupRoutes();
   }
@@ -60,23 +62,51 @@ export class AtlasServer {
     logger.info('Database initialized');
   }
 
-  private setupServices(): void {
+  private async setupServices(): Promise<void> {
     this.folderService = new FolderService(this.db);
+    
+    // Filesystem lazy direct-read — filename/metadata discovery over connected
+    // folders, bounded walk, content read only on demand (never auto-index).
+    this.filesystemAccess = new FilesystemAccessService();
+    const folderRoots = (await this.folderService.getFolders()).map((f) => f.path).filter(Boolean);
+    this.filesystemAccess.setAllowlistedRoots(folderRoots);
+    logger.info(`FS allowlist seeded from ${folderRoots.length} connected folder(s)`);
+
     this.indexingService = new IndexingService(this.db, {
       enableOCR: process.env.ENABLE_OCR === 'true',
       maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '52428800'), // 50MB
       chunkSize: parseInt(process.env.CHUNK_SIZE || '1000'),
       chunkOverlap: parseInt(process.env.CHUNK_OVERLAP || '200'),
-      maxConcurrentProcessing: parseInt(process.env.MAX_CONCURRENT_PROCESSING || '3')
+      maxConcurrentProcessing: parseInt(process.env.MAX_CONCURRENT_PROCESSING || '4')
     });
-    this.searchService = new SearchService(this.db);
+    this.searchService = new SearchService(this.db, this.filesystemAccess);
+
     const defaultProvider = process.env.OPENROUTER_API_KEY ? 'openrouter' : 'mock';
     this.aiService = new AIService(this.searchService, {
       provider: process.env.AI_PROVIDER || defaultProvider,
       apiKey: process.env.OPENROUTER_API_KEY,
       model: process.env.AI_MODEL || 'openai/gpt-4o-mini',
-      embeddingModel: process.env.EMBEDDING_MODEL || 'openai/text-embedding-ada-002'
-    });
+      embeddingModel: process.env.EMBEDDING_MODEL || 'openai/text-embedding-3-small'
+    }, this.filesystemAccess);
+
+    // Restore persisted AI config from Settings (overrides env defaults).
+    // The stored config is a JSON blob written by POST /api/ai/config.
+    try {
+      const saved = await this.db.getSetting('ai_config');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          this.aiService.updateConfig({
+            ...(parsed.apiKey !== undefined ? { apiKey: parsed.apiKey } : {}),
+            ...(parsed.model ? { model: parsed.model } : {}),
+            ...(parsed.embeddingModel ? { embeddingModel: parsed.embeddingModel } : {})
+          });
+          logger.info('Restored persisted AI provider config');
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to restore persisted AI config:', error);
+    }
 
     logger.info('Services initialized');
   }
@@ -145,7 +175,8 @@ export class AtlasServer {
       folderService: this.folderService,
       indexingService: this.indexingService,
       searchService: this.searchService,
-      aiService: this.aiService
+      aiService: this.aiService,
+      filesystemAccess: this.filesystemAccess
     });
 
     logger.info('Routes configured');

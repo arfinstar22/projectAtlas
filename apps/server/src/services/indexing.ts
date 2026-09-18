@@ -6,12 +6,17 @@ import {
   DocumentStatus, 
   JobStatus, 
   IndexingJobType,
+  QuickIndexProgress,
+  classifyFile,
+  quickIndexPriority,
   generateId, 
   chunkText, 
   AsyncQueue, 
   createLogger 
 } from '@atlas/core';
 import { DocumentProcessor, ProcessingOptions } from '@atlas/document';
+import { promises as fs } from 'fs';
+import path from 'path';
 
 const logger = createLogger('INDEXING_SERVICE');
 
@@ -19,6 +24,7 @@ export interface IndexingServiceOptions extends ProcessingOptions {
   chunkSize: number;
   chunkOverlap: number;
   maxConcurrentProcessing: number;
+  batchSize?: number;
 }
 
 export class IndexingService {
@@ -27,10 +33,15 @@ export class IndexingService {
   private queue: AsyncQueue;
   private options: IndexingServiceOptions;
   private activeJobs: Map<string, IndexingJob> = new Map();
+  private quickIndexProgress: Map<string, QuickIndexProgress> = new Map();
+  private cancelledJobs: Set<string> = new Set();
+  private folderJobIds: Map<string, string> = new Map();
+  private batchSize: number;
 
   constructor(db: AtlasDatabase, options: IndexingServiceOptions) {
     this.db = db;
     this.options = options;
+    this.batchSize = options.batchSize || 100;
     this.processor = new DocumentProcessor({
       enableOCR: options.enableOCR,
       maxFileSize: options.maxFileSize,
@@ -42,28 +53,223 @@ export class IndexingService {
     this.resumePendingJobs();
   }
 
+  async startQuickIndex(folderId: string): Promise<string> {
+    const reserved = this.folderJobIds.get(folderId);
+    if (reserved && (this.activeJobs.has(reserved) || this.quickIndexProgress.has(reserved))) {
+      return reserved;
+    }
+
+    const jobId = generateId();
+    this.folderJobIds.set(folderId, jobId);
+
+    const progress: QuickIndexProgress = {
+      jobId,
+      folderId,
+      status: JobStatus.QUEUED,
+      total: 0,
+      queued: 0,
+      processing: 0,
+      indexed: 0,
+      skipped: 0,
+      failed: 0,
+      bytesProcessed: 0
+    };
+    this.quickIndexProgress.set(jobId, progress);
+
+    // Run in background
+    this.runQuickIndex(jobId, folderId).catch(err => {
+      logger.error(`Quick Index ${jobId} failed:`, err);
+    });
+
+    return jobId;
+  }
+
+  // Quick Index: DISCOVERY from FILESYSTEM (not DB)
+  private async quickIndexDiscovery(folderId: string): Promise<string[]> {
+    const folders = await this.db.getFolders();
+    const folder = folders.find(f => f.id === folderId);
+    if (!folder) throw new Error('Folder not found');
+    const discovered: string[] = [];
+    const queue: string[] = [folder.path];
+    const visited = new Set<string>();
+    const SUPPORTED = new Set(['.pdf','.docx','.xlsx','.xls','.txt','.md','.markdown','.csv','.jpg','.jpeg','.png','.webp']);
+    while (queue.length > 0) {
+      const dir = queue.shift()!;
+      if (visited.has(dir)) continue;
+      visited.add(dir);
+      let entries: import('fs').Dirent[];
+      try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { continue; }
+      for (const e of entries) {
+        if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) { queue.push(full); continue; }
+        const ext = path.extname(e.name).toLowerCase();
+        if (!SUPPORTED.has(ext)) continue;
+        discovered.push(full);
+      }
+    }
+    return discovered;
+  }
+
+  private getMimeType(extension: string): string {
+    const mimeTypes: Record<string, string> = {
+      '.pdf': 'application/pdf',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.txt': 'text/plain',
+      '.md': 'text/markdown',
+      '.markdown': 'text/markdown',
+      '.csv': 'text/csv',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.xls': 'application/vnd.ms-excel',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp'
+    };
+    return mimeTypes[extension] || 'application/octet-stream';
+  }
+
+  private async runQuickIndex(jobId: string, folderId: string): Promise<void> {
+    const progress = this.quickIndexProgress.get(jobId)!;
+    progress.status = JobStatus.RUNNING;
+
+    try {
+      // DISCOVERY from FILESYSTEM (not DB)
+      const discovered = await this.quickIndexDiscovery(folderId);
+      logger.info(`[QUICK_INDEX] discovered=${discovered.length} files in folder ${folderId}`);
+      if (discovered.length === 0) { progress.total = 0; progress.status = JobStatus.COMPLETED; return; }
+
+      // Incremental: classify & filter unchanged via size+mtime
+      const docsToProcess: Document[] = [];
+      let skipped = 0;
+      for (const full of discovered) {
+        let stats: import('fs').Stats;
+        try { stats = await fs.stat(full); } catch { continue; }
+        const ext = path.extname(full).toLowerCase();
+        const existing = await this.db.getDocumentByPath(full);
+        if (existing) {
+          if (existing.size === stats.size && new Date(existing.modifiedAt).getTime() === stats.mtime.getTime()) {
+            skipped++;
+            continue;
+          }
+          existing.size = stats.size;
+          existing.modifiedAt = stats.mtime;
+          existing.status = DocumentStatus.PENDING;
+          await this.db.addDocument(existing);
+          docsToProcess.push(existing);
+        } else {
+          const extStr = ext;
+          const doc: Document = {
+            id: generateId(),
+            name: path.basename(full),
+            path: full,
+            extension: extStr,
+            size: stats.size,
+            createdAt: stats.birthtime,
+            modifiedAt: stats.mtime,
+            hash: '',
+            mimeType: this.getMimeType(extStr),
+            folderId,
+            status: DocumentStatus.PENDING
+          };
+          await this.db.addDocument(doc);
+          docsToProcess.push(doc);
+        }
+      }
+      progress.total = discovered.length;
+      progress.skipped = skipped;
+      progress.queued = docsToProcess.length;
+      if (docsToProcess.length === 0) { progress.status = JobStatus.COMPLETED; return; }
+
+      const sortedDocs = docsToProcess.sort((a, b) => {
+        const catA = classifyFile(a.extension);
+        const catB = classifyFile(b.extension);
+        return quickIndexPriority(catA) - quickIndexPriority(catB);
+      });
+
+      const tasks = sortedDocs.map(doc => this.queue.add(async () => {
+        if (this.cancelledJobs.has(jobId)) return;
+        progress.queued--;
+        progress.processing++;
+        try {
+          await this.db.updateDocumentStatus(doc.id, DocumentStatus.PROCESSING);
+          const processed = await this.processor.processDocument(doc.path);
+          if (processed.metadata) await this.db.updateDocumentMetadata(doc.id, processed.metadata);
+          const chunks = await this.createChunks(doc.id, processed.text);
+          await this.db.deleteDocumentChunks(doc.id);
+          await this.db.batchAddChunks(chunks);
+          await this.db.updateDocumentStatus(doc.id, DocumentStatus.INDEXED, new Date());
+          progress.indexed++;
+          progress.bytesProcessed += doc.size;
+        } catch (error) {
+          logger.error(`Quick Index failed for ${doc.path}:`, error);
+          progress.failed++;
+          await this.db.updateDocumentStatus(doc.id, DocumentStatus.ERROR);
+        } finally {
+          progress.processing--;
+        }
+      }));
+
+      await Promise.allSettled(tasks);
+      progress.status = JobStatus.COMPLETED;
+      
+    } catch (error: any) {
+      progress.status = JobStatus.FAILED;
+      progress.error = error.message;
+      logger.error(`Quick Index ${jobId} fatal error:`, error);
+    }
+  }
+
+  getQuickIndexProgress(jobId: string): QuickIndexProgress | undefined {
+    return this.quickIndexProgress.get(jobId);
+  }
+
+  getFolderQuickIndexJobId(folderId: string): string | undefined {
+    return this.folderJobIds.get(folderId);
+  }
+
   async startFolderIndexing(folderId: string): Promise<string> {
-    const documents = await this.db.getDocuments(folderId, DocumentStatus.PENDING);
-    
+    // One active job per folder, reserved ATOMICALLY: the Map.set below runs
+    // synchronously before the first await, so two concurrent scan requests
+    // for the same folder can never both create a job (no check-then-act gap).
+    const reserved = this.folderJobIds.get(folderId);
+    if (reserved && this.activeJobs.has(reserved)) {
+      return reserved;
+    }
+    if (reserved) {
+      // Stale reservation from a completed job: replace it below.
+      this.folderJobIds.delete(folderId);
+    }
+
     const job: IndexingJob = {
       id: generateId(),
       type: IndexingJobType.FOLDER_SCAN,
       status: JobStatus.QUEUED,
       folderId,
       progress: 0,
-      totalItems: documents.length,
+      totalItems: 0,
       processedItems: 0,
       startedAt: new Date()
     };
 
-    this.db.addJob(job);
-    this.activeJobs.set(job.id, job);
+    this.folderJobIds.set(folderId, job.id);
 
-    // Process documents in background
-    this.processDocumentsInJob(job.id, documents);
+    try {
+      const documents = await this.db.getDocuments(folderId, DocumentStatus.PENDING);
+      job.totalItems = documents.length;
 
-    logger.info(`Started indexing job for folder ${folderId}: ${job.id}`);
-    return job.id;
+      this.db.addJob(job);
+      this.activeJobs.set(job.id, job);
+
+      // Process documents in background
+      this.processDocumentsInJob(job.id, documents);
+
+      logger.info(`Started indexing job for folder ${folderId}: ${job.id}`);
+      return job.id;
+    } catch (error) {
+      this.folderJobIds.delete(folderId);
+      throw error;
+    }
   }
 
   async startDocumentIndexing(documentId: string): Promise<string> {
@@ -102,9 +308,12 @@ export class IndexingService {
     this.db.updateJob(jobId, { status: JobStatus.RUNNING });
 
     try {
-      for (const document of documents) {
-        await this.queue.add(() => this.processDocument(document, jobId));
-      }
+      // Enqueue every pending document at once. The shared worker pool
+      // (AsyncQueue) bounds actual concurrency to maxConcurrentProcessing.
+      const tasks = documents.map((document) =>
+        this.queue.add(() => this.processDocument(document, jobId))
+      );
+      await Promise.allSettled(tasks);
 
       // Job completed
       job.status = JobStatus.COMPLETED;
@@ -138,6 +347,11 @@ export class IndexingService {
     logger.info(`Processing document: ${document.path}`);
 
     try {
+      if (this.cancelledJobs.has(jobId)) {
+        logger.info(`Job ${jobId} cancelled, skipping document ${document.path}`);
+        return;
+      }
+
       // Update document status
       this.db.updateDocumentStatus(document.id, DocumentStatus.PROCESSING);
 
@@ -147,10 +361,9 @@ export class IndexingService {
       // Process document content
       const processed = await this.processor.processDocument(document.path);
 
-      // Update document with extracted metadata
+      // Update document with extracted metadata (status untouched)
       if (processed.metadata) {
-        document.metadata = processed.metadata;
-        this.db.addDocument(document);
+        this.db.updateDocumentMetadata(document.id, processed.metadata);
       }
 
       // Create chunks
@@ -314,11 +527,24 @@ export class IndexingService {
   }
 
   private resumePendingJobs(): void {
-    this.db.getJobs(JobStatus.RUNNING).then(pendingJobs => {
-      for (const job of pendingJobs) {
+    Promise.all([
+      // Requeue docs stuck in 'processing' (server restarted mid-file)
+      this.db.resetStuckProcessingDocuments(),
+      // Auto-resume folders that still have pending docs
+      this.db.getFoldersWithPendingDocuments(),
+      this.db.getJobs(JobStatus.RUNNING)
+    ]).then(async ([, foldersWithPending, runningJobs]) => {
+      for (const folderId of foldersWithPending) {
+        this.startFolderIndexing(folderId);
+      }
+      if (foldersWithPending.length > 0) {
+        logger.info(`Resuming index jobs for ${foldersWithPending.length} folder(s) with pending documents`);
+      }
+
+      for (const job of runningJobs) {
         // Reset running jobs to queued on startup
         this.db.updateJob(job.id, { status: JobStatus.QUEUED });
-        
+
         // Restart the job
         if (job.folderId) {
           this.startFolderIndexing(job.folderId);
@@ -327,8 +553,8 @@ export class IndexingService {
         }
       }
 
-      if (pendingJobs.length > 0) {
-        logger.info(`Resumed ${pendingJobs.length} pending indexing jobs`);
+      if (runningJobs.length > 0) {
+        logger.info(`Resumed ${runningJobs.length} running indexing jobs`);
       }
     }).catch(error => {
       logger.error('Error resuming pending jobs:', error);

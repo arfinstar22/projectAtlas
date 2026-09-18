@@ -5,7 +5,7 @@ import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import { parse as csvParse } from 'csv-parse/sync';
 import { marked } from 'marked';
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx';
 import mime from 'mime-types';
 import { Document, DocumentMetadata, createLogger } from '@atlas/core';
 

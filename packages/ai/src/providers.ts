@@ -3,6 +3,9 @@ import { createLogger } from '@atlas/core';
 
 const logger = createLogger('AI_PROVIDER');
 
+// Free router used as an automatic fallback when the primary model's credits run out.
+const FREE_ROUTER_ID = 'openrouter/free';
+
 export interface AIMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -15,12 +18,98 @@ export interface AIResponse {
     completion_tokens: number;
     total_tokens: number;
   };
+  effectiveModel?: string;
+  fallbackNotice?: string;
+}
+
+export interface OpenRouterModelInfo {
+  id: string;
+  name: string;
+  context_length?: number | null;
+  created?: number;
+  pricing?: {
+    prompt?: number;
+    completion?: number;
+    request?: number;
+    image?: number;
+    web_search?: number;
+    internal_reasoning?: number;
+  };
+  architecture?: {
+    modality?: string;
+    tokenizer?: string;
+    instruct_type?: string | null;
+    input_modalities?: string[];
+    output_modalities?: string[];
+  };
+  endpoint?: {
+    context_length?: number;
+    max_completion_tokens?: number;
+    supports_parameters?: string[];
+    supports_vision?: boolean;
+  };
+  support?: Record<string, unknown>;
+  description?: string;
+}
+
+export type AIErrorCode =
+  | 'NO_API_KEY'
+  | 'INVALID_API_KEY'
+  | 'INSUFFICIENT_CREDITS'
+  | 'RATE_LIMITED'
+  | 'SERVER_ERROR'
+  | 'TIMEOUT'
+  | 'NETWORK'
+  | 'UNKNOWN';
+
+export interface ClassifiedAIError {
+  code: AIErrorCode;
+  message: string;
+  friendly: string;
+}
+
+// Maps raw transport errors (axios) to structured categories the UI can act on.
+export function classifyAIError(error: any): ClassifiedAIError {
+  // Re-classification after a local wrapper already produced a classified error.
+  if (error?.classified) {
+    return error.classified;
+  }
+  const status = error?.response?.status;
+  const rawMessage = error?.response?.data?.error?.message || error?.message || '';
+
+  if (status === 401) {
+    return { code: 'INVALID_API_KEY', message: rawMessage, friendly: 'API key tidak valid.' };
+  }
+  if (status === 402) {
+    return { code: 'INSUFFICIENT_CREDITS', message: rawMessage, friendly: 'API key berhasil dikenali, tetapi akun tidak memiliki kredit yang diperlukan untuk model berbayar.' };
+  }
+  if (status === 429) {
+    return { code: 'RATE_LIMITED', message: rawMessage, friendly: 'Terlalu banyak permintaan (rate limit). Silakan coba lagi nanti.' };
+  }
+  if (status && status >= 500) {
+    return { code: 'SERVER_ERROR', message: rawMessage, friendly: 'Provider/OpenRouter sedang mengalami masalah sementara. Silakan coba lagi.' };
+  }
+  if (error?.code === 'ECONNABORTED' || error?.code === 'ETIMEDOUT') {
+    return { code: 'TIMEOUT', message: rawMessage, friendly: 'Waktu permintaan habis (timeout). Silakan coba lagi.' };
+  }
+  if (error?.request || error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
+    return { code: 'NETWORK', message: rawMessage, friendly: 'Gagal terhubung ke OpenRouter. Periksa koneksi internet Anda.' };
+  }
+  return { code: 'UNKNOWN', message: rawMessage, friendly: rawMessage || 'Terjadi kesalahan yang tidak diketahui.' };
+}
+
+function attachCode(error: any, classified: ClassifiedAIError): Error {
+  const err = new Error(classified.friendly) as any;
+  err.classified = classified;
+  return err;
 }
 
 export interface AIProvider {
   name: string;
   generateResponse(messages: AIMessage[], options?: any): Promise<AIResponse>;
   generateEmbedding(text: string): Promise<number[]>;
+  listModels(apiKey?: string): Promise<OpenRouterModelInfo[]>;
+  validateApiKey(apiKey: string): Promise<void>;
   isConfigured(): boolean;
 }
 
@@ -30,6 +119,8 @@ export class OpenRouterProvider implements AIProvider {
   private baseURL = 'https://openrouter.ai/api/v1';
   private model: string;
   private embeddingModel: string;
+  private modelCache: { keyHash: string; fetchedAt: number; models: OpenRouterModelInfo[] } | null = null;
+  private readonly MODEL_CACHE_TTL = 5 * 60 * 1000;
 
   constructor(config: {
     apiKey: string;
@@ -41,16 +132,59 @@ export class OpenRouterProvider implements AIProvider {
     this.embeddingModel = config.embeddingModel;
   }
 
+  update(config: { apiKey?: string; model?: string; embeddingModel?: string }): void {
+    if (config.apiKey !== undefined) {
+      this.apiKey = config.apiKey;
+      this.modelCache = null; // Invalidate catalog cache when key changes
+    }
+    if (config.model !== undefined) this.model = config.model;
+    if (config.embeddingModel !== undefined) this.embeddingModel = config.embeddingModel;
+  }
+
   async generateResponse(messages: AIMessage[], options: any = {}): Promise<AIResponse> {
     if (!this.isConfigured()) {
-      throw new Error('OpenRouter not configured. Please set API key.');
+      const err = new Error('OpenRouter not configured. Please set API key.') as any;
+      err.code = 'NO_API_KEY';
+      throw err;
     }
 
+    const primaryModel: string = options.model || this.model;
+
+    try {
+      // Must await: without it the catch below never fires (the error rejects
+      // only after the un-awaited promise reaches the caller), so the free
+      // router fallback was dead code.
+      return await this.postChatCompletion(messages, options, primaryModel);
+    } catch (error: any) {
+      const classified = classifyAIError(error);
+      if (
+        options.autoFallback !== false &&
+        classified.code === 'INSUFFICIENT_CREDITS' &&
+        primaryModel !== FREE_ROUTER_ID
+      ) {
+        logger.warn('Credits exhausted on primary model; retrying with free router');
+        // Carry the primary model in options so postChatCompletion can flag
+        // the response with a fallbackNotice for the UI.
+        return await this.postChatCompletion(
+          messages,
+          { ...options, model: primaryModel },
+          FREE_ROUTER_ID
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async postChatCompletion(
+    messages: AIMessage[],
+    options: any,
+    model: string
+  ): Promise<AIResponse> {
     try {
       const response = await axios.post(
         `${this.baseURL}/chat/completions`,
         {
-          model: this.model,
+          model,
           messages,
           max_tokens: options.maxTokens || 1000,
           temperature: options.temperature || 0.7,
@@ -71,17 +205,27 @@ export class OpenRouterProvider implements AIProvider {
 
       return {
         content: choice.message.content,
-        usage: response.data.usage
+        usage: response.data.usage,
+        effectiveModel: model,
+        fallbackNotice:
+          model === FREE_ROUTER_ID && options.model && options.model !== FREE_ROUTER_ID
+            ? `Kredit model utama habis — jawaban ini memakai model gratis (openrouter/free).`
+            : undefined
       };
     } catch (error: any) {
+      const classified = classifyAIError(error);
       logger.error('OpenRouter API error:', error.response?.data || error.message);
-      throw new Error(`AI request failed: ${error.response?.data?.error?.message || error.message}`);
+      const err = attachCode(error, classified) as any;
+      err.classified = classified;
+      throw err;
     }
   }
 
   async generateEmbedding(text: string): Promise<number[]> {
     if (!this.isConfigured()) {
-      throw new Error('OpenRouter not configured. Please set API key.');
+      const err = new Error('OpenRouter not configured. Please set API key.') as any;
+      err.code = 'NO_API_KEY';
+      throw err;
     }
 
     try {
@@ -106,9 +250,59 @@ export class OpenRouterProvider implements AIProvider {
 
       return embedding;
     } catch (error: any) {
+      const classified = classifyAIError(error);
       logger.error('OpenRouter embedding error:', error.response?.data || error.message);
-      throw new Error(`Embedding generation failed: ${error.response?.data?.error?.message || error.message}`);
+      throw attachCode(error, classified);
     }
+  }
+
+  // Fetches the OpenRouter model catalog. Cached for a few minutes per API key.
+  async listModels(apiKey?: string): Promise<OpenRouterModelInfo[]> {
+    const key = apiKey || this.apiKey;
+    const keyHash = this.hashKey(key);
+    if (
+      this.modelCache &&
+      this.modelCache.keyHash === keyHash &&
+      Date.now() - this.modelCache.fetchedAt < this.MODEL_CACHE_TTL
+    ) {
+      return this.modelCache.models;
+    }
+
+    try {
+      const response = await axios.get(`${this.baseURL}/models`, {
+        headers: key ? { 'Authorization': `Bearer ${key}` } : undefined,
+        timeout: 20000
+      });
+      const models: OpenRouterModelInfo[] = response.data?.data || [];
+      this.modelCache = { keyHash, fetchedAt: Date.now(), models };
+      logger.info(`Fetched ${models.length} OpenRouter models`);
+      return models;
+    } catch (error: any) {
+      const classified = classifyAIError(error);
+      throw attachCode(error, classified);
+    }
+  }
+
+  // Validates an API key via the protected /key endpoint.
+  // /models is public, so it cannot tell a valid key from garbage.
+  async validateApiKey(apiKey: string): Promise<void> {
+    try {
+      await axios.get(`${this.baseURL}/key`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        timeout: 20000
+      });
+    } catch (error: any) {
+      const classified = classifyAIError(error);
+      throw attachCode(error, classified);
+    }
+  }
+
+  private hashKey(key: string): string {
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) {
+      hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+    }
+    return `${hash}`;
   }
 
   isConfigured(): boolean {
@@ -143,11 +337,26 @@ export class MockAIProvider implements AIProvider {
     };
   }
 
-  async generateEmbedding(text: string): Promise<number[]> {
+  async generateEmbedding(_text: string): Promise<number[]> {
     // Generate a mock embedding (random vector for testing)
     const dimension = 1536; // OpenAI embedding dimension
     const embedding = Array(dimension).fill(0).map(() => Math.random() - 0.5);
     return embedding;
+  }
+
+  async listModels(): Promise<OpenRouterModelInfo[]> {
+    return [
+      {
+        id: 'openrouter/free',
+        name: 'OpenRouter Free Router',
+        context_length: 128000,
+        pricing: { prompt: 0, completion: 0 }
+      }
+    ];
+  }
+
+  async validateApiKey(): Promise<void> {
+    // Mock provider accepts any key
   }
 
   isConfigured(): boolean {

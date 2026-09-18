@@ -1,9 +1,35 @@
-import { createAIProvider, AIProvider, AIMessage } from '@atlas/ai';
+import { createAIProvider, AIProvider, AIMessage, OpenRouterModelInfo, classifyAIError, AIErrorCode } from '@atlas/ai';
 import { SearchService } from './search.js';
 import { createLogger } from '@atlas/core';
-import { QueryIntent } from './query-analyzer.js';
+import { QueryAnalyzer, QueryIntent } from './query-analyzer.js';
+import { FilesystemAccessService } from './filesystem.js';
 
 const logger = createLogger('AI_SERVICE');
+const queryAnalyzer = new QueryAnalyzer();
+
+const FS_CONTEXT_CHAR_LIMIT = 8000;
+const FREE_ROUTER_ID = 'openrouter/free';
+
+// Fallback allowlist used only when the catalog lacks explicit embedding
+// capability metadata — never the sole signal. (ponytail: metadata-first;
+// revisit when OpenRouter exposes a definitive embedding modality flag.)
+const EMBEDDING_MODEL_FALLBACK_IDS = [
+  'openai/text-embedding-3-large',
+  'openai/text-embedding-3-small',
+  'openai/text-embedding-ada-002',
+  'nomic-ai/nomic-embed-text-v1.5',
+  'snowflake/snowflake-arctic-embed:335m',
+  'ibm-granite/granite-embedding-278m-multilingual',
+];
+
+export interface ModelOption {
+  id: string;
+  name: string;
+  free: boolean;
+  contextLength?: number | null;
+  promptPrice?: number | null;
+  completionPrice?: number | null;
+}
 
 export interface ChatRequest {
   message: string;
@@ -20,108 +46,510 @@ export interface ChatResponse {
     snippet: string;
   }>;
   conversationId: string;
+  responseType?: 'chat' | 'discovery';
+  discoveryDocuments?: Array<{
+    id: string;
+    name: string;
+    extension: string;
+    size: number;
+    path: string;
+    status: string;
+    folderId: string;
+    modifiedAt: string;
+  }>;
+  effectiveModel?: string;
+  fallbackNotice?: string;
 }
 
 export class AIService {
   private provider: AIProvider;
+  private filesystemAccess?: FilesystemAccessService;
   private searchService: SearchService;
+  private config: {
+    provider: string;
+    apiKey?: string;
+    model: string;
+    embeddingModel: string;
+    autoFallback: boolean;
+  };
+  private modelListCache: { key: string; value: { chat: ModelOption[]; embedding: ModelOption[] } } | null = null;
 
   constructor(searchService: SearchService, config: {
     provider: string;
     apiKey?: string;
     model: string;
     embeddingModel: string;
-  }) {
+    autoFallback?: boolean;
+  }, filesystemAccess?: FilesystemAccessService) {
     this.searchService = searchService;
-    this.provider = createAIProvider(config);
-    
+    this.filesystemAccess = filesystemAccess;
+    this.config = {
+      provider: config.provider,
+      apiKey: config.apiKey,
+      model: config.model || FREE_ROUTER_ID,
+      embeddingModel: config.embeddingModel || 'openai/text-embedding-3-small',
+      autoFallback: config.autoFallback !== false
+    };
+    this.provider = this.buildProvider();
+
     logger.info(`Initialized AI service with provider: ${this.provider.name}`);
   }
 
-  async processChat(request: ChatRequest): Promise<ChatResponse> {
-    logger.info(`Processing chat: "${request.message}"`);
+  private buildProvider(): AIProvider {
+    return createAIProvider({
+      provider: this.config.provider,
+      apiKey: this.config.apiKey,
+      model: this.config.model,
+      embeddingModel: this.config.embeddingModel
+    });
+  }
+
+  // Applies runtime config (from Settings). Never exposes the API key.
+  updateConfig(partial: {
+    apiKey?: string;
+    model?: string;
+    embeddingModel?: string;
+    autoFallback?: boolean;
+  }): void {
+    if (partial.apiKey !== undefined) {
+      this.config.apiKey = partial.apiKey;
+      this.modelListCache = null;
+    }
+    if (partial.model !== undefined && partial.model !== '') {
+      this.config.model = partial.model;
+    }
+    if (partial.embeddingModel !== undefined && partial.embeddingModel !== '') {
+      this.config.embeddingModel = partial.embeddingModel;
+    }
+    if (partial.autoFallback !== undefined) {
+      this.config.autoFallback = partial.autoFallback;
+    }
+
+    this.config.provider = this.config.apiKey ? 'openrouter' : (process.env.AI_PROVIDER || 'mock');
+    this.provider = this.buildProvider();
+  }
+
+  getModelConfig(): { model: string; embeddingModel: string } {
+    return { model: this.config.model, embeddingModel: this.config.embeddingModel };
+  }
+
+  // Full runtime config for server-side persistence only. Never returned
+  // to the frontend — routes use getProviderInfo() instead.
+  getEffectiveConfig(): { apiKey?: string; model: string; embeddingModel: string; autoFallback: boolean } {
+    return {
+      apiKey: this.config.apiKey,
+      model: this.config.model,
+      embeddingModel: this.config.embeddingModel,
+      autoFallback: this.config.autoFallback
+    };
+  }
+
+  getProviderInfo() {
+    return {
+      provider: this.provider.name,
+      configured: this.provider.isConfigured(),
+      hasApiKey: Boolean(this.config.apiKey),
+      model: this.config.model,
+      embeddingModel: this.config.embeddingModel,
+      autoFallback: this.config.autoFallback
+    };
+  }
+
+  // Fetches OpenRouter catalog (cached 5 min per key, invalidated on key change)
+  // and returns only the models ATLAS can use. No API key returned.
+  async listModels(apiKey?: string): Promise<{ chat: ModelOption[]; embedding: ModelOption[] }> {
+    const key = apiKey || this.config.apiKey;
+    if (this.modelListCache && this.modelListCache.key === key) {
+      return this.modelListCache.value;
+    }
+
+    const models = await this.provider.listModels(key);
+    const chat = this.filterChatModels(models);
+    const embedding = this.filterEmbeddingModels(models);
+    this.modelListCache = { key, value: { chat, embedding } };
+
+    logger.info(`Model discovery: ${chat.length} chat, ${embedding.length} embedding models`);
+    return this.modelListCache.value;
+  }
+
+  private isFree(model: OpenRouterModelInfo): boolean {
+    const p = model.pricing;
+    return !p || (Number(p.prompt || 0) === 0 && Number(p.completion || 0) === 0);
+  }
+
+  private toOption(model: OpenRouterModelInfo): ModelOption {
+    return {
+      id: model.id,
+      name: model.name || model.id,
+      free: this.isFree(model),
+      contextLength: model.context_length ?? model.endpoint?.context_length ?? null,
+      promptPrice: model.pricing ? Number(model.pricing.prompt ?? null) : null,
+      completionPrice: model.pricing ? Number(model.pricing.completion ?? null) : null
+    };
+  }
+
+  private filterChatModels(models: OpenRouterModelInfo[]): ModelOption[] {
+    const opts = models
+      .filter((m) => {
+        if (EMBEDDING_MODEL_FALLBACK_IDS.includes(m.id) || /embed(ding)?/i.test(m.id)) {
+          return false;
+        }
+        const input = m.architecture?.input_modalities;
+        const output = m.architecture?.output_modalities;
+        if (input && output) {
+          return input.includes('text') && output.includes('text');
+        }
+        return true; // No modality metadata -> keep for chat (text-capable by default)
+      })
+      .map((m) => this.toOption(m));
+
+    // Free Router pinned to the top when present in the catalog.
+    const freeRouter = opts.find((o) => o.id === FREE_ROUTER_ID);
+    if (freeRouter) {
+      opts.splice(opts.indexOf(freeRouter), 1);
+      opts.unshift(freeRouter);
+    } else {
+      opts.unshift({ id: FREE_ROUTER_ID, name: 'OpenRouter Free Router', free: true });
+    }
+
+    return opts;
+  }
+
+  private filterEmbeddingModels(models: OpenRouterModelInfo[]): ModelOption[] {
+    const byId = new Map(models.map((m) => [m.id, m]));
+    const matched = new Set<string>();
+
+    // Prefer explicit catalog metadata for embedding capability.
+    const metadataMatches = models.filter((m) => {
+      const modality = m.architecture?.modality?.toLowerCase() || '';
+      const inputMods = (m.architecture?.input_modalities || []).join(',');
+      return (
+        modality.includes('embedding') ||
+        modality === 'non-text' ||
+        inputMods.includes('embedding') ||
+        (m.support && (m.support as any).embedding === true)
+      );
+    });
+    metadataMatches.forEach((m) => matched.add(m.id));
+
+    // Fallback allowlist for embedding models the catalog does not flag.
+    EMBEDDING_MODEL_FALLBACK_IDS.forEach((id) => {
+      if (byId.has(id)) matched.add(id);
+    });
+
+    return Array.from(matched)
+      .map((id) => byId.get(id)!)
+      .map((m) => this.toOption(m));
+  }
+
+  async testConnection(apiKey?: string): Promise<{
+    success: boolean;
+    connected?: boolean;
+    code?: AIErrorCode;
+    message?: string;
+    provider?: string;
+    chatModelCount?: number;
+    embeddingModelCount?: number;
+    models?: { chat: ModelOption[]; embedding: ModelOption[] };
+  }> {
+    const effectiveKey = apiKey || this.config.apiKey;
+
+    if (!effectiveKey) {
+      return { success: false, code: 'NO_API_KEY', message: 'Masukkan API key terlebih dahulu.' };
+    }
 
     try {
-      // Enhanced context retrieval with query analysis
-      const contextResult = await this.searchService.searchForContext(
-        request.message,
-        8 // Allow more chunks for better context
-      );
+      // Validate first: /models is public and cannot distinguish a bad key.
+      await this.provider.validateApiKey(effectiveKey);
+      const models = await this.listModels(effectiveKey);
+      // Cache reflects the tested key even before it is saved.
+      this.config.apiKey = effectiveKey;
+      return {
+        success: true,
+        connected: true,
+        provider: 'OpenRouter',
+        chatModelCount: models.chat.length,
+        embeddingModelCount: models.embedding.length,
+        models
+      };
+    } catch (error: any) {
+      const classified = classifyAIError(error);
+      logger.error(`OpenRouter connection test failed: ${classified.code}`);
+      return {
+        success: false,
+        code: classified.code,
+        message: classified.friendly
+      };
+    }
+  }
 
-      const relevantChunks = contextResult.chunks;
-      const queryAnalysis = contextResult.analysis;
-      const strategy = contextResult.strategy;
+  private friendlyChatError(error: any): string {
+    const code = (error as any)?.classified?.code || (error as any)?.code as AIErrorCode | undefined;
+    switch (code) {
+      case 'NO_API_KEY':
+        return 'Fitur Tanya ATLAS membutuhkan API key OpenRouter. Buka menu Settings → AI Provider untuk memasukkannya.';
+      case 'INVALID_API_KEY':
+        return 'API key tidak valid. Periksa kembali API key OpenRouter Anda di Settings → AI Provider.';
+      case 'INSUFFICIENT_CREDITS':
+        return 'API key berhasil dikenali, tetapi akun tidak memiliki kredit yang diperlukan untuk model berbayar. Pilih model FREE seperti "OpenRouter Free Router" di Settings.';
+      case 'RATE_LIMITED':
+        return 'Terlalu banyak permintaan (rate limit). Silakan tunggu sebentar lalu coba lagi.';
+      case 'TIMEOUT':
+        return 'Waktu permintaan habis (timeout). Silakan coba lagi.';
+      case 'NETWORK':
+        return 'Gagal terhubung ke OpenRouter. Periksa koneksi internet Anda.';
+      case 'SERVER_ERROR':
+        return 'Provider/OpenRouter sedang mengalami masalah sementara. Silakan coba lagi nanti.';
+      default:
+        return 'Terjadi kesalahan saat memproses pertanyaan Anda. Pastikan pengaturan AI valid dan coba lagi.';
+    }
+  }
 
-      logger.info(`Context retrieval completed:`, {
-        intent: queryAnalysis.intent,
-        chunksFound: relevantChunks.length,
-        needsMultipleChunks: queryAnalysis.needsMultipleChunks,
-        isDocumentLevel: queryAnalysis.isDocumentLevel
-      });
+  async processChat(request: ChatRequest): Promise<ChatResponse> {
+    const conversationId = request.conversationId || this.generateConversationId();
 
-      // Check if we have enough relevant context
-      if (relevantChunks.length === 0) {
-        logger.info(`No relevant context found for query: "${request.message}"`);
+    try {
+      const queryAnalysis = queryAnalyzer.analyzeQuery(request.message);
+      const analyzedQuery = queryAnalysis.originalQuery;
+
+      if (queryAnalysis.intent === QueryIntent.CONVERSATIONAL) {
         return {
-          response: 'Maaf, saya belum menemukan informasi yang cukup relevan di dokumen yang tersedia untuk menjawab pertanyaan tersebut. Pastikan dokumen sudah terindeks dengan benar.',
+          response: this.getConversationalResponse(request.message),
           sources: [],
-          conversationId: request.conversationId || this.generateConversationId()
+          conversationId,
+          responseType: 'chat',
         };
       }
 
-      // Apply relevance threshold - reject if context seems irrelevant
-      const contextRelevance = this.assessContextRelevance(request.message, relevantChunks, queryAnalysis);
-      
-      if (contextRelevance.score < 0.3) {
-        logger.info(`Context relevance too low (${contextRelevance.score}), rejecting query`);
-        return {
-          response: contextRelevance.reason || 'Maaf, saya tidak menemukan informasi yang relevan untuk pertanyaan tersebut dalam dokumen yang tersedia.',
-          sources: [],
-          conversationId: request.conversationId || this.generateConversationId()
-        };
+      if (queryAnalysis.intent === QueryIntent.DOCUMENT_DISCOVERY) {
+        return this.handleDocumentDiscovery(request);
       }
 
-      // Prepare enhanced context for AI
+      const startTime = Date.now();
+      const relevantChunks = await this.searchService.getRelevantContext(analyzedQuery || request.message);
+      logger.info(`[RAG] retrieval done chunks=${relevantChunks.length} ms=${Date.now() - startTime}`);
+
+      if (relevantChunks.length === 0 && this.filesystemAccess) {
+        try {
+          const fsCandidates = await this.filesystemAccess.discoverCandidates(request.message, 5);
+          if (fsCandidates.length > 0) {
+            const directRead = await this.filesystemAccess.readFileDirect(fsCandidates[0].path);
+            const grounded = directRead.result;
+            if (grounded && grounded.text && grounded.text.trim().length > 0) {
+              const groundedContext = {
+                text: grounded.text.slice(0, FS_CONTEXT_CHAR_LIMIT),
+                source: directRead.path,
+                documentName: grounded.name,
+                section: `dibaca langsung dari filesystem (belum terindeks)`,
+              };
+              logger.info(`[FS_DIRECT_READ] direct-read fallback path=${directRead.path} chars=${grounded.text.length}`);
+              const fsPrompt = this.createEnhancedContextPrompt([groundedContext], request.message, queryAnalysis);
+              const fsMessages: AIMessage[] = [
+                { role: 'system', content: this.createSystemPrompt() },
+                { role: 'user', content: fsPrompt },
+              ];
+              const providerResponse = await this.provider.generateResponse(fsMessages);
+              return {
+                response: providerResponse.content,
+                sources: [],
+                conversationId,
+                responseType: 'chat',
+              };
+            }
+            return {
+              response: `Ditemukan di filesystem tapi isinya belum dapat dibaca: ${fsCandidates[0].name}. File ini belum terindeks.`,
+              sources: [],
+              conversationId,
+              responseType: 'discovery',
+              discoveryDocuments: fsCandidates.map((f) => ({
+                id: `fs-${f.path}`,
+                name: f.name,
+                extension: f.extension || f.path.split('.').pop() || '',
+                size: f.size || 0,
+                path: f.path,
+                status: 'unindexed',
+                folderId: f.folderId || '',
+                modifiedAt: f.modifiedAt?.toISOString() || new Date().toISOString(),
+              })),
+            };
+          }
+        } catch (err) {
+          logger.error(`[FS_DIRECT_READ] fallback error: ${(err as Error).message}`);
+        }
+      }
+
       const assembledContext = await this.assembleIntelligentContext(relevantChunks, queryAnalysis);
-
-      // Create enhanced system prompt based on query intent
-      const systemPrompt = this.createEnhancedSystemPrompt(queryAnalysis);
-      
-      // Create context prompt with better structure
+      const systemPrompt = this.createEnhancedSystemPrompt(queryAnalysis.intent);
       const contextPrompt = this.createEnhancedContextPrompt(assembledContext, request.message, queryAnalysis);
-
-      // Prepare messages for AI
       const messages: AIMessage[] = [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: contextPrompt }
+        { role: 'user', content: contextPrompt },
       ];
 
-      // Get AI response with dynamic parameters based on intent
       const aiOptions = this.getAIOptionsForIntent(queryAnalysis.intent);
       const aiResponse = await this.provider.generateResponse(messages, aiOptions);
 
-      // Prepare enhanced sources with better metadata
       const sources = await this.prepareSources(relevantChunks, queryAnalysis);
-
       const response: ChatResponse = {
         response: aiResponse.content,
         sources,
-        conversationId: request.conversationId || this.generateConversationId()
+        conversationId,
       };
-
-      logger.info(`Chat processed successfully: intent=${queryAnalysis.intent}, sources=${sources.length}, contextRelevance=${contextRelevance.score.toFixed(2)}`);
       return response;
-
     } catch (error) {
       logger.error('Error processing chat:', error);
-      
-      // Enhanced fallback response
       return {
-        response: 'Maaf, terjadi kesalahan saat memproses pertanyaan Anda. Pastikan dokumen sudah terindeks dan coba lagi. Jika masalah berlanjut, coba dengan pertanyaan yang lebih spesifik.',
+        response: this.friendlyChatError(error),
         sources: [],
-        conversationId: request.conversationId || this.generateConversationId()
+        conversationId: request.conversationId || this.generateConversationId(),
       };
     }
+  }
+
+
+  // === CONVERSATIONAL RESPONSE (deterministic, no LLM) ===
+  private getConversationalResponse(query: string): string {
+    const q = query.toLowerCase().trim();
+
+    // Greetings
+    if (/^(hai|halo|hello|hi|hey)\b/i.test(q)) {
+      return 'Halo! 👋 Ada yang bisa saya bantu cari atau pahami dari dokumen Anda?';
+    }
+    if (/^(selamat\s+(pagi|siang|sore|malam))\b/i.test(q)) {
+      const timeWord = q.includes('pagi') ? 'Pagi' : q.includes('siang') ? 'Siang' : q.includes('sore') ? 'Sore' : 'Malam';
+      return `Selamat ${timeWord}! 👋 Ada yang bisa saya bantu dari dokumen Anda?`;
+    }
+    if (/^(apa\s+kabar)\b/i.test(q)) {
+      return 'Kabar baik! 😊 Siap membantu Anda mencari informasi dari dokumen.';
+    }
+
+    // Thanks
+    if (/^(terima\s+kasih|makasih|thanks|thank\s*you)\b/i.test(q)) {
+      return 'Sama-sama! 😊 Ada yang lain bisa saya bantu?';
+    }
+
+    // Acknowledgments
+    if (/^(ok|oke|sip|siap|baik|mantap|keren|hebat|bagus)\b/i.test(q)) {
+      return '👍 Siap! Kalau butuh bantuan lagi, tinggal tanya.';
+    }
+
+    // Goodbye
+    if (/^(dadah|bye|goodbye|selamat\s+tinggal|see\s*you|sampai\s+jumpa)\b/i.test(q)) {
+      return 'Sampai jumpa! 👋 Semoga harimu menyenangkan.';
+    }
+
+    // Fallback for any other conversational input
+    return 'Halo! 👋 Ada yang bisa saya bantu cari atau pahami dari dokumen Anda?';
+  }
+
+  // === DOCUMENT DISCOVERY (search by filename/metadata) ===
+  private async handleDocumentDiscovery(request: ChatRequest): Promise<ChatResponse> {
+    const conversationId = request.conversationId || this.generateConversationId();
+
+    // Extract search keywords from the query (only strip action/trigger words, keep domain terms)
+    const keywords = request.message
+      .toLowerCase()
+      .replace(/\b(carikan|cari|find|search|tunjukkan|show|display|ada|mana|tampilkan|lihat|file|dokumen|pdf|doc|yang|tentang|dari|ini|itu|saya|aku)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!keywords) {
+      // Generic "show all documents" request
+      const docs = (await this.searchService.db.getDocuments()).slice(0, 10);
+      if (docs.length === 0) {
+        return {
+          response: 'Belum ada dokumen yang terindeks. Silakan tambahkan folder atau file terlebih dahulu.',
+          sources: [],
+          conversationId,
+          responseType: 'discovery',
+          discoveryDocuments: []
+        };
+      }
+      const list = docs.slice(0, 5).map((d: any) => `• **${d.name}** (${d.extension || '-'}, ${d.status})`).join('\n');
+      return {
+        response: `Berikut dokumen yang tersedia:\n${list}${docs.length > 5 ? `\n... dan ${docs.length - 5} lainnya.` : ''}`,
+        sources: [],
+        conversationId,
+        responseType: 'discovery',
+        discoveryDocuments: docs.slice(0, 10).map((d: any) => ({
+          id: d.id,
+          name: d.name,
+          extension: d.extension || '',
+          size: d.size || 0,
+          path: d.path || '',
+          status: d.status,
+          folderId: d.folderId,
+          modifiedAt: d.modifiedAt?.toISOString() || new Date().toISOString()
+        }))
+      };
+    }
+
+    // Search documents by name (in-memory filter on all docs)
+    const allDocs = await this.searchService.db.getDocuments();
+    const docs = allDocs.filter((d: any) =>
+      d.name.toLowerCase().includes(keywords) ||
+      (d.path && d.path.toLowerCase().includes(keywords))
+    ).slice(0, 10);
+
+    if (docs.length === 0) {
+      // FTS has no answer → try lazy FS metadata discovery over connected
+      // folders (filename/path only, never reads contents). The filesystem is
+      // the source of truth; the index is just an accelerator.
+      if (this.filesystemAccess) {
+        const fsCandidates = await this.filesystemAccess.discoverCandidates(keywords, 10);
+        if (fsCandidates.length > 0) {
+          const fsList = fsCandidates.map((f) => `• **${f.name}** (${f.extension || '-'}, ditemukan di filesystem — belum terindeks)`).join('\n');
+          logger.info(`[FS_METADATA_DISCOVERY] fallback hit candidates=${fsCandidates.length} keywords="${keywords}"`);
+          return {
+            response: `Ditemukan ${fsCandidates.length} file yang cocok di folder terhubung (belum terindeks):\n${fsList}\n\nFile ini ada di filesystem tapi belum melalui indeks. Saya bisa re-index atau langsung membaca isinya — tanyakan isi dokumen untuk pembahasan.`,
+            sources: [],
+            conversationId,
+            responseType: 'discovery',
+            discoveryDocuments: fsCandidates.map((f) => ({
+              id: `fs-${f.path}`,
+              name: f.name,
+              extension: f.extension,
+              size: f.size || 0,
+              path: f.path,
+              status: 'unindexed',
+              unindexed: true,
+              folderId: f.folderId || '',
+              modifiedAt: f.modifiedAt?.toISOString?.() || new Date().toISOString()
+            }))
+          };
+        }
+      }
+
+      return {
+        response: `Tidak ditemukan dokumen dengan kata kunci "${keywords}". Coba kata kunci lain atau periksa nama file.`,
+        sources: [],
+        conversationId,
+        responseType: 'discovery',
+        discoveryDocuments: []
+      };
+    }
+
+    const list = docs.slice(0, 5).map((d: any) => {
+      const sizeKB = d.size ? `${Math.round(d.size / 1024)}KB` : '-';
+      return `• **${d.name}** (${d.extension || '-'}, ${sizeKB}, ${d.status})`;
+    }).join('\n');
+
+    return {
+      response: `Ditemukan ${docs.length} dokumen untuk "${keywords}":\n${list}${docs.length > 5 ? `\n... dan ${docs.length - 5} lainnya.` : ''}\n\nTanyakan isi dokumen untuk analisis lebih lanjut.`,
+      sources: [],
+      conversationId,
+      responseType: 'discovery',
+      discoveryDocuments: docs.map((d: any) => ({
+        id: d.id,
+        name: d.name,
+        extension: d.extension || '',
+        size: d.size || 0,
+        path: d.path || '',
+        status: d.status,
+        folderId: d.folderId,
+        modifiedAt: d.modifiedAt?.toISOString() || new Date().toISOString()
+      }))
+    };
   }
 
   private createSystemPrompt(): string {
@@ -519,27 +947,5 @@ Berdasarkan konteks di atas, berikan jawaban yang akurat dan informatif untuk pe
 
   private generateConversationId(): string {
     return `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  getProviderInfo() {
-    return {
-      name: this.provider.name,
-      configured: this.provider.isConfigured()
-    };
-  }
-
-  async testConnection(): Promise<{ success: boolean; error?: string }> {
-    try {
-      const testResponse = await this.provider.generateResponse([
-        { role: 'user', content: 'Hello, this is a connection test.' }
-      ]);
-      
-      return { success: true };
-    } catch (error: any) {
-      return { 
-        success: false, 
-        error: error.message 
-      };
-    }
   }
 }

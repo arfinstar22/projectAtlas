@@ -14,16 +14,16 @@
     "noEmit": false,
     "declaration": true,
     "outDir": "./dist",
+    "rootDir": "./src",
     "baseUrl": ".",
     "paths": {
-      "@atlas/core": ["../../packages/core/src"],
-      "@atlas/document": ["../../packages/document/src"],
-      "@atlas/ai": ["../../packages/ai/src"]
+      "@atlas/core": ["../../packages/core/dist"],
+      "@atlas/document": ["../../packages/document/dist"],
+      "@atlas/ai": ["../../packages/ai/dist"]
     }
   },
   "include": [
-    "src/**/*",
-    "../../packages/*/src/**/*"
+    "src/**/*"
   ],
   "exclude": [
     "node_modules",

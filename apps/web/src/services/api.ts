@@ -13,8 +13,12 @@ export const api = {
   // Folders
   getFolders: () => client.get('/folders').then(res => res.data),
   addFolder: (path: string) => client.post('/folders', { path }).then(res => res.data),
+  addFolderUpload: (form: FormData) => client.post('/folders/upload', form).then(res => res.data),
   removeFolder: (id: string) => client.delete(`/folders/${id}`).then(res => res.data),
+  removeAllFolders: () => client.delete('/folders').then(res => res.data),
   scanFolder: (id: string) => client.post(`/folders/${id}/scan`).then(res => res.data),
+  quickIndexFolder: (id: string) => client.post(`/folders/${id}/quick-index`).then(res => res.data),
+  getQuickIndexProgress: (id: string) => client.get(`/folders/${id}/quick-index/progress`).then(res => res.data),
 
   // Documents
   getDocuments: (params?: {
@@ -52,9 +56,14 @@ export const api = {
     client.post('/chat', { message, conversationId }).then(res => res.data),
   
   getAIStatus: () => client.get('/ai/status').then(res => res.data),
-  testAIConnection: () => client.post('/ai/test').then(res => res.data),
+  getAIModels: () => client.get('/ai/models').then(res => res.data),
+  configureAI: (cfg: { apiKey?: string; model?: string; embeddingModel?: string }) => 
+    client.post('/ai/config', cfg).then(res => res.data),
+  testAIConnection: (apiKey?: string) => 
+    client.post('/ai/test', { apiKey }).then(res => res.data),
 
-  // Filesystem security
-  checkPathAccess: (path: string) => 
-    client.get('/fs/explore', { params: { path } }).then(res => res.data),
+  // Filesystem
+  exploreFolder: (path?: string) => 
+    client.get('/fs/browse', { params: { path } }).then(res => res.data),
+  browseFolder: () => client.post('/fs/browse-dialog').then(res => res.data),
 };
