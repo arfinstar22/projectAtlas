@@ -57,7 +57,7 @@ export function SettingsPage() {
       autoIndex: true
     }
   });
-  const [aiStatus, setAiStatus] = useState<{ provider: string; configured: boolean; hasApiKey: boolean; model?: string; embeddingModel?: string } | null>(null);
+  const [aiStatus, setAiStatus] = useState<{ provider: string; providerId?: string; configured: boolean; hasApiKey: boolean; model?: string; embeddingModel?: string } | null>(null);
   const [models, setModels] = useState<{ chat: ModelOption[]; embedding: ModelOption[] } | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [apiKeyDirty, setApiKeyDirty] = useState(false);
@@ -83,7 +83,9 @@ export function SettingsPage() {
         ...prev,
         ai: {
           ...prev.ai,
-          provider: status.provider.toLowerCase() === 'mock ai' ? 'openrouter' : status.provider.toLowerCase(),
+          // providerId is the canonical id ('google' | 'openrouter' | 'mock');
+          // fall back to the display-name mapping for older servers.
+          provider: status.providerId || (status.provider.toLowerCase() === 'mock ai' ? 'openrouter' : status.provider.toLowerCase()),
           apiKey: status.hasApiKey ? KEY_MASK : '',
           model: status.model || '',
           embeddingModel: status.embeddingModel || ''
@@ -112,6 +114,25 @@ export function SettingsPage() {
     }
   };
 
+  // Switching provider persists immediately (with that provider's default
+  // models) so chat/embedding never run with a mismatched provider/model pair.
+  const handleProviderChange = async (provider: string) => {
+    const defaults: Record<string, { model: string; embeddingModel: string }> = {
+      google: { model: 'gemini-3.6-flash', embeddingModel: 'gemini-embedding-001' },
+      openrouter: { model: 'openrouter/free', embeddingModel: 'openai/text-embedding-3-small' }
+    };
+    const d = defaults[provider] || defaults.openrouter;
+    setSettings(prev => ({ ...prev, ai: { ...prev.ai, provider, model: d.model, embeddingModel: d.embeddingModel } }));
+    setModels(null);
+    try {
+      const result = await api.configureAI({ provider, ...d });
+      setAiStatus(prevStatus => prevStatus ? { ...prevStatus, providerId: provider, model: d.model, embeddingModel: d.embeddingModel } : prevStatus);
+      toast.success(`Provider diganti ke ${provider === 'google' ? 'Google AI (Gemini)' : 'OpenRouter'}. Masukkan API key-nya lalu simpan.`);
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Gagal mengganti provider.');
+    }
+  };
+
   const handleSave = async () => {
     if (!apiKeyDirty && !aiStatus?.hasApiKey) {
       toast.error('Masukkan API key terlebih dahulu untuk menyimpan konfigurasi AI.');
@@ -119,7 +140,8 @@ export function SettingsPage() {
     }
 
     try {
-      const payload: { apiKey?: string; model?: string; embeddingModel?: string } = {
+      const payload: { provider?: string; apiKey?: string; model?: string; embeddingModel?: string } = {
+        provider: settings.ai.provider,
         model: settings.ai.model || undefined,
         embeddingModel: settings.ai.embeddingModel || undefined
       };
@@ -335,15 +357,18 @@ export function SettingsPage() {
                   </label>
                   <select
                     value={settings.ai.provider}
-                    onChange={(e) => setSettings(prev => ({
-                      ...prev,
-                      ai: { ...prev.ai, provider: e.target.value }
-                    }))}
+                    onChange={(e) => handleProviderChange(e.target.value)}
                     className="w-full px-3 py-2 border border-border rounded-lg bg-surface-800 text-surface-100 focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500"
                   >
+                    <option value="google">Google AI (Gemini)</option>
                     <option value="openrouter">OpenRouter</option>
                     <option value="local" disabled>Local AI (Coming Soon)</option>
                   </select>
+                  <p className="mt-1 text-xs text-text-muted">
+                    {settings.ai.provider === 'google'
+                      ? 'Dapatkan API key gratis di aistudio.google.com/apikey — mendukung chat dan embedding.'
+                      : 'Dapatkan API key dari openrouter.ai/keys.'}
+                  </p>
                 </div>
 
                 <div>

@@ -1,6 +1,6 @@
 import { createAIProvider, AIProvider, AIMessage, OpenRouterModelInfo, classifyAIError, AIErrorCode } from '@atlas/ai';
 import { SearchService } from './search.js';
-import { createLogger } from '@atlas/core';
+import { createLogger, DocumentChunk } from '@atlas/core';
 import { QueryAnalyzer, QueryIntent } from './query-analyzer.js';
 import { FilesystemAccessService } from './filesystem.js';
 
@@ -72,22 +72,27 @@ export class AIService {
     embeddingModel: string;
     autoFallback: boolean;
   };
+  // True once the user explicitly picked a provider in Settings; prevents the
+  // legacy apiKey-implies-openrouter inference from overriding that choice.
+  private providerExplicitlySet = false;
   private modelListCache: { key: string; value: { chat: ModelOption[]; embedding: ModelOption[] } } | null = null;
 
   constructor(searchService: SearchService, config: {
     provider: string;
     apiKey?: string;
-    model: string;
-    embeddingModel: string;
+    model?: string;
+    embeddingModel?: string;
     autoFallback?: boolean;
   }, filesystemAccess?: FilesystemAccessService) {
     this.searchService = searchService;
     this.filesystemAccess = filesystemAccess;
+    const isGoogle = config.provider === 'google' || config.provider === 'google-ai' || config.provider === 'gemini';
     this.config = {
       provider: config.provider,
       apiKey: config.apiKey,
-      model: config.model || FREE_ROUTER_ID,
-      embeddingModel: config.embeddingModel || 'openai/text-embedding-3-small',
+      // gemini-2.5-flash is retired for new keys (404) — default to the current flash model.
+      model: config.model || (isGoogle ? 'gemini-3.6-flash' : FREE_ROUTER_ID),
+      embeddingModel: config.embeddingModel || (isGoogle ? 'gemini-embedding-001' : 'openai/text-embedding-3-small'),
       autoFallback: config.autoFallback !== false
     };
     this.provider = this.buildProvider();
@@ -106,6 +111,7 @@ export class AIService {
 
   // Applies runtime config (from Settings). Never exposes the API key.
   updateConfig(partial: {
+    provider?: string;
     apiKey?: string;
     model?: string;
     embeddingModel?: string;
@@ -114,6 +120,10 @@ export class AIService {
     if (partial.apiKey !== undefined) {
       this.config.apiKey = partial.apiKey;
       this.modelListCache = null;
+    }
+    if (partial.provider !== undefined && partial.provider !== '') {
+      this.config.provider = partial.provider;
+      this.providerExplicitlySet = true;
     }
     if (partial.model !== undefined && partial.model !== '') {
       this.config.model = partial.model;
@@ -125,7 +135,11 @@ export class AIService {
       this.config.autoFallback = partial.autoFallback;
     }
 
-    this.config.provider = this.config.apiKey ? 'openrouter' : (process.env.AI_PROVIDER || 'mock');
+    // Legacy inference for configs that never chose a provider explicitly:
+    // a key present means OpenRouter (old key-implies-provider behavior).
+    if (!this.providerExplicitlySet) {
+      this.config.provider = this.config.apiKey ? 'openrouter' : (process.env.AI_PROVIDER || 'mock');
+    }
     this.provider = this.buildProvider();
   }
 
@@ -135,8 +149,12 @@ export class AIService {
 
   // Full runtime config for server-side persistence only. Never returned
   // to the frontend — routes use getProviderInfo() instead.
-  getEffectiveConfig(): { apiKey?: string; model: string; embeddingModel: string; autoFallback: boolean } {
+  // provider MUST be included: without it the restart restore falls back to
+  // the legacy "apiKey implies openrouter" inference and a Google key gets
+  // sent to OpenRouter (every call 401s).
+  getEffectiveConfig(): { provider: string; apiKey?: string; model: string; embeddingModel: string; autoFallback: boolean } {
     return {
+      provider: this.config.provider,
       apiKey: this.config.apiKey,
       model: this.config.model,
       embeddingModel: this.config.embeddingModel,
@@ -147,11 +165,62 @@ export class AIService {
   getProviderInfo() {
     return {
       provider: this.provider.name,
+      providerId: this.config.provider,
       configured: this.provider.isConfigured(),
       hasApiKey: Boolean(this.config.apiKey),
       model: this.config.model,
       embeddingModel: this.config.embeddingModel,
       autoFallback: this.config.autoFallback
+    };
+  }
+
+  // ===== Embeddings (vector semantic search) =====
+
+  // Embed chunks after indexing. Sequential on purpose: embedding APIs are
+  // rate-limited and vectors are a background concern, not a latency race.
+  async embedChunks(chunks: DocumentChunk[]): Promise<{ embedded: number; failed: number }> {
+    if (!this.config.apiKey || chunks.length === 0) {
+      return { embedded: 0, failed: chunks.length };
+    }
+    const model = this.config.embeddingModel;
+    let embedded = 0;
+    let failed = 0;
+    for (const chunk of chunks) {
+      try {
+        const vector = await this.provider.generateEmbedding(chunk.text);
+        await this.searchService.db.upsertEmbedding(chunk.id, model, vector);
+        embedded++;
+      } catch (error: any) {
+        failed++;
+        if (failed === 1) {
+          logger.error('Chunk embedding failed (first error):', error?.message || error);
+        }
+        // A broken key fails every call — stop early instead of hammering.
+        if (error?.classified?.code === 'INVALID_API_KEY') break;
+      }
+    }
+    if (embedded > 0 || failed > 0) {
+      logger.info(`[EMBED] model=${model} embedded=${embedded} failed=${failed}`);
+    }
+    return { embedded, failed };
+  }
+
+  // Returns null on failure — semanticSearch degrades to keyword instead of erroring.
+  async embedQuery(text: string): Promise<number[] | null> {
+    if (!this.config.apiKey) return null;
+    try {
+      return await this.provider.generateEmbedding(text);
+    } catch (error: any) {
+      logger.warn('Query embedding failed, semantic search will use keyword fallback:', error?.message || error);
+      return null;
+    }
+  }
+
+  getEmbeddingInfo(): { provider: string; model: string; hasApiKey: boolean } {
+    return {
+      provider: this.config.provider,
+      model: this.config.embeddingModel,
+      hasApiKey: Boolean(this.config.apiKey)
     };
   }
 
@@ -285,6 +354,13 @@ export class AIService {
 
   private friendlyChatError(error: any): string {
     const code = (error as any)?.classified?.code || (error as any)?.code as AIErrorCode | undefined;
+    // Google provider errors carry provider-specific friendly text already
+    // (e.g. "API key Google AI tidak valid...") — prefer it over the
+    // OpenRouter-worded table below.
+    const isGoogle = ['google', 'google-ai', 'gemini'].includes(this.config.provider);
+    if (isGoogle && (error as any)?.classified?.friendly) {
+      return (error as any).classified.friendly;
+    }
     switch (code) {
       case 'NO_API_KEY':
         return 'Fitur Tanya ATLAS membutuhkan API key OpenRouter. Buka menu Settings → AI Provider untuk memasukkannya.';
@@ -297,9 +373,9 @@ export class AIService {
       case 'TIMEOUT':
         return 'Waktu permintaan habis (timeout). Silakan coba lagi.';
       case 'NETWORK':
-        return 'Gagal terhubung ke OpenRouter. Periksa koneksi internet Anda.';
+        return 'Gagal terhubung ke layanan AI. Periksa koneksi internet Anda.';
       case 'SERVER_ERROR':
-        return 'Provider/OpenRouter sedang mengalami masalah sementara. Silakan coba lagi nanti.';
+        return 'Provider AI sedang mengalami masalah sementara. Silakan coba lagi nanti.';
       default:
         return 'Terjadi kesalahan saat memproses pertanyaan Anda. Pastikan pengaturan AI valid dan coba lagi.';
     }

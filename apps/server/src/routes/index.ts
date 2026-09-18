@@ -21,6 +21,10 @@ export interface ServiceDependencies {
 export async function registerRoutes(app: FastifyInstance, services: ServiceDependencies) {
   const { db, folderService, indexingService, searchService, aiService, filesystemAccess } = services;
 
+  // Give the indexing pipeline access to the embedding provider so newly
+  // indexed chunks get vectors for semantic search.
+  indexingService.setAiService(aiService);
+
   // Folder management routes
   await app.register(async (fastify) => {
     fastify.get('/folders', async () => {
@@ -464,6 +468,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
       const providerInfo = aiService.getProviderInfo();
       return {
         provider: providerInfo.provider,
+        providerId: providerInfo.providerId,
         configured: providerInfo.configured,
         available: providerInfo.configured,
         hasApiKey: providerInfo.hasApiKey,
@@ -487,7 +492,8 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
 
     // Persist runtime AI configuration (Settings "Simpan Pengaturan").
     fastify.post('/ai/config', async (request, reply) => {
-      const { apiKey, model, embeddingModel, autoFallback } = (request.body || {}) as {
+      const { provider, apiKey, model, embeddingModel, autoFallback } = (request.body || {}) as {
+        provider?: string;
         apiKey?: string;
         model?: string;
         embeddingModel?: string;
@@ -498,13 +504,14 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
       const isMasked = typeof apiKey === 'string' && apiKey.includes('•');
       const effectiveApiKey = isMasked ? undefined : apiKey;
 
-      if (effectiveApiKey === undefined && model === undefined && embeddingModel === undefined && autoFallback === undefined) {
+      if (provider === undefined && effectiveApiKey === undefined && model === undefined && embeddingModel === undefined && autoFallback === undefined) {
         reply.status(400);
         return { error: { code: 'EMPTY_CONFIG', message: 'Tidak ada pengaturan yang dikirim.' } };
       }
 
       try {
         aiService.updateConfig({
+          ...(provider !== undefined ? { provider } : {}),
           ...(effectiveApiKey !== undefined ? { apiKey: effectiveApiKey } : {}),
           ...(model !== undefined ? { model } : {}),
           ...(embeddingModel !== undefined ? { embeddingModel } : {}),
@@ -521,6 +528,7 @@ export async function registerRoutes(app: FastifyInstance, services: ServiceDepe
           model: info.model,
           embeddingModel: info.embeddingModel,
           provider: info.provider,
+          providerId: info.providerId,
           configured: info.configured
         };
       } catch (error: any) {

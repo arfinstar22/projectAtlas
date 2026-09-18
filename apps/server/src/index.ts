@@ -81,13 +81,16 @@ export class AtlasServer {
     });
     this.searchService = new SearchService(this.db, this.filesystemAccess);
 
-    const defaultProvider = process.env.OPENROUTER_API_KEY ? 'openrouter' : 'mock';
+    const defaultProvider = process.env.GOOGLE_API_KEY
+      ? 'google'
+      : (process.env.OPENROUTER_API_KEY ? 'openrouter' : 'mock');
     this.aiService = new AIService(this.searchService, {
       provider: process.env.AI_PROVIDER || defaultProvider,
-      apiKey: process.env.OPENROUTER_API_KEY,
-      model: process.env.AI_MODEL || 'openai/gpt-4o-mini',
-      embeddingModel: process.env.EMBEDDING_MODEL || 'openai/text-embedding-3-small'
+      apiKey: process.env.GOOGLE_API_KEY || process.env.OPENROUTER_API_KEY,
+      model: process.env.AI_MODEL,
+      embeddingModel: process.env.EMBEDDING_MODEL
     }, this.filesystemAccess);
+    this.searchService.setAiService(this.aiService);
 
     // Restore persisted AI config from Settings (overrides env defaults).
     // The stored config is a JSON blob written by POST /api/ai/config.
@@ -97,11 +100,12 @@ export class AtlasServer {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === 'object') {
           this.aiService.updateConfig({
+            ...(parsed.provider ? { provider: parsed.provider } : {}),
             ...(parsed.apiKey !== undefined ? { apiKey: parsed.apiKey } : {}),
             ...(parsed.model ? { model: parsed.model } : {}),
             ...(parsed.embeddingModel ? { embeddingModel: parsed.embeddingModel } : {})
           });
-          logger.info('Restored persisted AI provider config');
+          logger.info(`Restored persisted AI provider config (provider=${this.aiService.getProviderInfo().providerId})`);
         }
       }
     } catch (error) {

@@ -17,6 +17,7 @@ import {
   createLogger 
 } from '@atlas/core';
 import { DocumentProcessor, ProcessingOptions } from '@atlas/document';
+import { AIService } from './ai.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -38,6 +39,7 @@ export class IndexingService {
   private quickIndexProgress: Map<string, QuickIndexProgress> = new Map();
   private cancelledJobs: Set<string> = new Set();
   private folderJobIds: Map<string, string> = new Map();
+  private aiService?: AIService;
   private batchSize: number;
 
   constructor(db: AtlasDatabase, options: IndexingServiceOptions) {
@@ -53,6 +55,26 @@ export class IndexingService {
 
     // Resume any pending jobs on startup
     this.resumePendingJobs();
+  }
+
+  // Set after construction (AIService needs a SearchService reference).
+  setAiService(aiService: AIService): void {
+    this.aiService = aiService;
+  }
+
+  // Embedding runs AFTER status is flipped to INDEXED: a failed embedding
+  // batch must never mark an indexed document as error. Vectors are a
+  // background enrichment, not a gate for index status.
+  private async embedChunkInBackground(documentId: string, chunks: DocumentChunk[]): Promise<void> {
+    if (!this.aiService || chunks.length === 0) return;
+    try {
+      const result = await this.aiService.embedChunks(chunks);
+      if (result.failed > 0) {
+        logger.warn(`Embedding incomplete for ${documentId}: embedded=${result.embedded} failed=${result.failed}`);
+      }
+    } catch (error) {
+      logger.warn(`Background embedding failed for ${documentId}:`, error);
+    }
   }
 
   async startQuickIndex(folderId: string): Promise<string> {
@@ -203,6 +225,7 @@ export class IndexingService {
           await this.db.updateDocumentStatus(doc.id, DocumentStatus.INDEXED, new Date());
           progress.indexed++;
           progress.bytesProcessed += doc.size;
+          this.embedChunkInBackground(doc.id, chunks);
         } catch (error) {
           logger.error(`Quick Index failed for ${doc.path}:`, error);
           progress.failed++;
@@ -378,6 +401,9 @@ export class IndexingService {
 
       // Update document status
       this.db.updateDocumentStatus(document.id, DocumentStatus.INDEXED, new Date());
+
+      // Embed chunks in the background (vector search enrichment).
+      this.embedChunkInBackground(document.id, chunks);
 
       // Update job progress
       const job = this.activeJobs.get(jobId);

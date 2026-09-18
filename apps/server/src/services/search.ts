@@ -10,6 +10,7 @@ import {
 } from '@atlas/core';
 import { QueryAnalyzer, QueryAnalysis, QueryIntent } from './query-analyzer.js';
 import { FilesystemAccessService, FSCandidate } from './filesystem.js';
+import { AIService } from './ai.js';
 
 const logger = createLogger('SEARCH_SERVICE');
 
@@ -17,11 +18,17 @@ export class SearchService {
   public db: AtlasDatabase; // Made public for AI service access
   private queryAnalyzer: QueryAnalyzer;
   private filesystemAccess: FilesystemAccessService;
+  private aiService?: AIService;
 
   constructor(db: AtlasDatabase, filesystemAccess: FilesystemAccessService) {
     this.db = db;
     this.queryAnalyzer = new QueryAnalyzer();
     this.filesystemAccess = filesystemAccess;
+  }
+
+  // Set after construction (AIService needs a SearchService reference).
+  setAiService(aiService: AIService): void {
+    this.aiService = aiService;
   }
 
   async search(query: SearchQuery): Promise<SearchResult[]> {
@@ -81,11 +88,75 @@ export class SearchService {
     return this.processChunksToResults(chunks, query.query);
   }
 
+  // Vector semantic search: cosine similarity between the query embedding and
+  // chunk vectors, then assemble full results. Degrades to keyword search when
+  // vectors are missing or the embedding provider is unavailable.
   private async semanticSearch(query: SearchQuery): Promise<SearchResult[]> {
-    // For MVP, fall back to keyword search
-    // TODO: Implement vector search when embedding service is ready
-    logger.debug('Semantic search not yet implemented, falling back to keyword search');
-    return this.keywordSearch(query);
+    if (!this.aiService) {
+      logger.debug('Semantic search unavailable (no embedding provider), using keyword search');
+      return this.keywordSearch(query);
+    }
+
+    try {
+      const embeddingModel = this.aiService.getEmbeddingInfo().model;
+      const queryVector = await this.aiService.embedQuery(query.query);
+      if (!queryVector || queryVector.length === 0) {
+        return this.keywordSearch(query);
+      }
+
+      const docs = await this.db.getDocuments(undefined, 'indexed' as any);
+      if (docs.length === 0) return [];
+
+      const vectors = await this.db.loadEmbeddings(docs.map(d => d.id), embeddingModel);
+      if (vectors.size === 0) {
+        logger.info('[SEMANTIC] no vectors stored yet — falling back to keyword search');
+        return this.keywordSearch(query);
+      }
+
+      // Per-document KNN: score that doc's embedded chunks, keep the best ones.
+      const limit = query.limit || 20;
+      const scored = new Map<string, { chunk: DocumentChunk; score: number }>();
+      for (const doc of docs) {
+        const docChunks = await this.db.getChunks(doc.id);
+        const best: Array<{ chunk: DocumentChunk; score: number }> = [];
+        for (const chunk of docChunks) {
+          const vector = vectors.get(chunk.id);
+          if (!vector) continue;
+          best.push({ chunk, score: this.cosineSimilarity(queryVector, vector) });
+        }
+        best.sort((a, b) => b.score - a.score);
+        for (const entry of best.slice(0, limit)) {
+          scored.set(entry.chunk.id, entry);
+        }
+      }
+
+      if (scored.size === 0) {
+        logger.info('[SEMANTIC] chunks not embedded yet — falling back to keyword search');
+        return this.keywordSearch(query);
+      }
+
+      const top = [...scored.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+      // Pertahankan skor cosine asli — tanpa ini skor semantic tertimpa skor keyword.
+      const scoreById = new Map(top.map(e => [e.chunk.id, e.score]));
+      return this.processChunksToResults(top.map(e => e.chunk), query.query, (c) => scoreById.get(c.id) ?? 0);
+    } catch (error) {
+      logger.error('Semantic search failed, falling back to keyword search:', error);
+      return this.keywordSearch(query);
+    }
+  }
+
+  private cosineSimilarity(a: number[], b: number[]): number {
+    if (a.length !== b.length) return 0; // Mixed dimensions — treat as no match.
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    if (normA === 0 || normB === 0) return 0;
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
   }
 
   private async hybridSearch(query: SearchQuery): Promise<SearchResult[]> {
@@ -448,7 +519,11 @@ export class SearchService {
     return indices;
   }
 
-  private async processChunksToResults(chunks: DocumentChunk[], query: string): Promise<SearchResult[]> {
+  private async processChunksToResults(
+    chunks: DocumentChunk[],
+    query: string,
+    scoreFor?: (chunk: DocumentChunk) => number
+  ): Promise<SearchResult[]> {
     const results: SearchResult[] = [];
 
     // Single batched fetch instead of one query per chunk (N+1 elimination).
@@ -466,7 +541,7 @@ export class SearchService {
       const result: SearchResult = {
         documentId: chunk.documentId,
         chunkId: chunk.id,
-        score: this.calculateKeywordScore(chunk.text, query),
+        score: scoreFor ? scoreFor(chunk) : this.calculateKeywordScore(chunk.text, query),
         snippet,
         metadata: chunk.metadata,
         document,

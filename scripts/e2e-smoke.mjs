@@ -143,9 +143,12 @@ async function main() {
     && Array.isArray(models.data?.chat) && models.data.chat.length > 0,
     `chat=${models.data?.chat?.length} embedding=${models.data?.embedding?.length}`);
 
-  const cfg = await req('POST', '/ai/config', { apiKey: '••••••••••••••••', model: 'openai/gpt-4o-mini' });
+  // Pertahankan model aktif — smoke test tidak boleh mengubah konfigurasi AI.
+  const currentCfg = await req('GET', '/ai/status');
+  const activeModel = currentCfg.data?.model || undefined;
+  const cfg = await req('POST', '/ai/config', { apiKey: '••••••••••••••••', ...(activeModel ? { model: activeModel } : {}) });
   ok('ai/config simpan (masked key diabaikan)', cfg.status === 200 && cfg.data?.success === true
-    && cfg.data?.hasApiKey === true && cfg.data?.model === 'openai/gpt-4o-mini');
+    && cfg.data?.hasApiKey === true && (!activeModel || cfg.data?.model === activeModel));
 
   const test = await req('POST', '/ai/test', {}, 40000);
   ok('ai/test koneksi', test.data?.success === true,

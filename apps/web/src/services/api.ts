@@ -57,7 +57,7 @@ export const api = {
   
   getAIStatus: () => client.get('/ai/status').then(res => res.data),
   getAIModels: () => client.get('/ai/models').then(res => res.data),
-  configureAI: (cfg: { apiKey?: string; model?: string; embeddingModel?: string }) => 
+  configureAI: (cfg: { provider?: string; apiKey?: string; model?: string; embeddingModel?: string }) => 
     client.post('/ai/config', cfg).then(res => res.data),
   testAIConnection: (apiKey?: string) => 
     client.post('/ai/test', { apiKey }).then(res => res.data),

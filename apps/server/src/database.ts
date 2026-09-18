@@ -551,6 +551,48 @@ export class AtlasDatabase {
     }
   }
 
+  // ===== Embeddings (vector semantic search) =====
+
+  // One vector per chunk per model; re-embedding the same chunk replaces it.
+  async upsertEmbedding(chunkId: string, model: string, embedding: number[]): Promise<void> {
+    await this.db.run(
+      'INSERT OR REPLACE INTO embeddings (chunk_id, embedding, model, created_at) VALUES (?, ?, ?, ?)',
+      [chunkId, JSON.stringify(embedding), model, new Date().toISOString()]
+    );
+  }
+
+  // Load vectors for scoring. Filtered by model so vectors from different
+  // embedding models are never mixed in one similarity space.
+  async loadEmbeddings(documentIds: string[], model: string): Promise<Map<string, number[]>> {
+    const map = new Map<string, number[]>();
+    const unique = [...new Set(documentIds)].filter(Boolean);
+    if (unique.length === 0) return map;
+    const placeholders = unique.map(() => '?').join(',');
+    const rows = await this.db.all(
+      `SELECT e.chunk_id, e.embedding FROM embeddings e
+       JOIN chunks c ON c.id = e.chunk_id
+       WHERE e.model = ? AND c.document_id IN (${placeholders})`,
+      [model, ...unique]
+    );
+    for (const row of rows) {
+      try {
+        map.set(row.chunk_id, JSON.parse(row.embedding));
+      } catch {
+        // Corrupt row: skip rather than break the whole search.
+      }
+    }
+    return map;
+  }
+
+  async countEmbeddings(model?: string): Promise<number> {
+    if (model) {
+      const row = await this.db.get('SELECT COUNT(*) as count FROM embeddings WHERE model = ?', [model]);
+      return row.count;
+    }
+    const row = await this.db.get('SELECT COUNT(*) as count FROM embeddings');
+    return row.count;
+  }
+
   async close(): Promise<void> {
     if (this.db) {
       await this.db.close();

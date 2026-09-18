@@ -153,9 +153,9 @@ export function SearchPage() {
                 className="px-3 py-2 border border-border rounded-lg bg-surface-800 text-surface-100 text-sm focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500"
               >
                 <option value="keyword">Kata Kunci</option>
-                {/* Semantic mode is a keyword-search stub server-side — hide it
-                    until real vector search lands so the UI stays honest. */}
-                <option value="semantic" disabled>Semantik (segera)</option>
+                {/* Vector search over chunk embeddings (falls back to keyword
+                    automatically when vectors/embeddings are unavailable). */}
+                <option value="semantic">Semantik</option>
                 <option value="hybrid">Hybrid</option>
               </select>
             </div>
